@@ -1,0 +1,5 @@
+# Google OAuth Configuration
+VITE_GOOGLE_CLIENT_ID=299327010320-orfiddlljpdk90tsf79ic6knu9bucg8m.apps.googleusercontent.com
+
+# S3 Configuration for Admin Token Access (optional for local dev)
+VITE_S3_BUCKET_URL=
