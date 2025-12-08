@@ -25,7 +25,7 @@ A secure, token-based object storage system with Google OAuth authentication, us
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone git@github.com:maimon33/trufo.git
 cd trufo
 ```
 
