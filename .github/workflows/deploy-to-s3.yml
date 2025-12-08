@@ -38,7 +38,7 @@ jobs:
 
       - name: Sync files to S3
         run: |
-          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }} --delete
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }} --delete --exclude "admin/*" --exclude "data/*"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.js" --content-type "application/javascript"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.css" --content-type "text/css"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.html" --content-type "text/html"
