@@ -1,4 +1,4 @@
-name: Deploy to S3
+name: Deploy to AWS
 
 on:
   push:
@@ -28,6 +28,7 @@ jobs:
         env:
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
           VITE_S3_BUCKET_URL: ${{ secrets.VITE_S3_BUCKET_URL }}
+          VITE_LAMBDA_API_URL: ${{ secrets.VITE_LAMBDA_API_URL }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -43,6 +44,28 @@ jobs:
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.css" --content-type "text/css"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.html" --content-type "text/html"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.json" --content-type "application/json"
+
+      - name: Deploy Lambda function
+        run: |
+          cd lambda
+          npm install --production
+          zip -r trufo-api.zip . -x "*.md" "cloudformation.yaml" "initial-setup.md" "deploy.md" "github-iam-policy.json"
+
+          # Update Lambda function code
+          aws lambda update-function-code \
+            --function-name trufo-api \
+            --zip-file fileb://trufo-api.zip
+
+          echo "Lambda function updated successfully"
+
+      - name: Get Lambda Function URL
+        run: |
+          FUNCTION_URL=$(aws cloudformation describe-stacks \
+            --stack-name trufo-api-stack \
+            --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' \
+            --output text)
+          echo "Lambda Function URL: $FUNCTION_URL"
+          echo "Make sure VITE_LAMBDA_API_URL secret is set to: $FUNCTION_URL"
 
       - name: Invalidate CloudFront (optional)
         if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}

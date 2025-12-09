@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Trufo - DynamoDB + Lambda Function URL stack'
+
+Parameters:
+  AdminToken:
+    Type: String
+    Description: Admin token for admin access
+    Default: 'your-secure-admin-token'
+    NoEcho: true
+
+Resources:
+  # DynamoDB Table
+  TrufoObjectsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: trufo-objects
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: name
+          AttributeType: S
+        - AttributeName: ownerEmail
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: name-index
+          KeySchema:
+            - AttributeName: name
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: owner-index
+          KeySchema:
+            - AttributeName: ownerEmail
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !GetAtt TrufoObjectsTable.Arn
+                  - !Sub "${TrufoObjectsTable.Arn}/index/*"
+
+  # Lambda Function
+  TrufoApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: trufo-api
+      Runtime: nodejs18.x
+      Handler: trufo-api.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            return {
+              statusCode: 200,
+              body: JSON.stringify({ message: 'Please upload the actual function code' })
+            };
+          };
+      Environment:
+        Variables:
+          DYNAMODB_TABLE_NAME: !Ref TrufoObjectsTable
+          ADMIN_TOKEN: !Ref AdminToken
+          AWS_REGION: !Ref AWS::Region
+
+  # Function URL
+  TrufoApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt TrufoApiFunction.Arn
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        MaxAge: 300
+
+  # Permission for Function URL
+  FunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt TrufoApiFunction.Arn
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+Outputs:
+  FunctionUrl:
+    Description: 'Lambda Function URL'
+    Value: !GetAtt TrufoApiFunctionUrl.FunctionUrl
+    Export:
+      Name: TrufoApiFunctionUrl
+
+  DynamoDBTableName:
+    Description: 'DynamoDB Table Name'
+    Value: !Ref TrufoObjectsTable
+
+  DynamoDBTableArn:
+    Description: 'DynamoDB Table ARN'
+    Value: !GetAtt TrufoObjectsTable.Arn
