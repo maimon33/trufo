@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { getStats } from '../lib/storage'
+import { getStats } from '../lib/api-storage'
 
 export default function HomePage() {
   const stats = getStats()

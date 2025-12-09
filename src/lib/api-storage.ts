@@ -69,10 +69,48 @@ export async function accessObject(name: string, token: string): Promise<{ conte
 export async function getUserObjects(email: string): Promise<TrufoObject[]> {
   try {
     const response = await apiRequest<ApiResponse>(`/user-objects?email=${encodeURIComponent(email)}`)
-    return response.objects || []
+    const objects = response.objects || []
+
+    // Cache objects in localStorage for offline access
+    setStoredObjects(objects)
+
+    return objects
   } catch (error) {
     console.error('Failed to get user objects:', error)
-    return []
+    // Return cached objects if API fails
+    return getStoredObjects().filter(obj => obj.ownerEmail === email)
+  }
+}
+
+// Get active objects for a user
+export async function getUserActiveObjects(email: string): Promise<TrufoObject[]> {
+  const objects = await getUserObjects(email)
+  const now = Date.now()
+  return objects.filter(obj => obj.ttl > now)
+}
+
+// Get expired objects for a user
+export async function getUserExpiredObjects(email: string): Promise<TrufoObject[]> {
+  const objects = await getUserObjects(email)
+  const now = Date.now()
+  return objects.filter(obj => obj.ttl <= now)
+}
+
+// Cleanup expired objects for current user
+export async function cleanupExpiredObjects(email: string): Promise<number> {
+  try {
+    const expiredObjects = await getUserExpiredObjects(email)
+    let removedCount = 0
+
+    for (const obj of expiredObjects) {
+      const success = await deleteObject(obj.id)
+      if (success) removedCount++
+    }
+
+    return removedCount
+  } catch (error) {
+    console.error('Failed to cleanup expired objects:', error)
+    return 0
   }
 }
 
@@ -152,4 +190,20 @@ export function setStoredObjects(objects: TrufoObject[]): void {
 
 export function clearStoredObjects(): void {
   localStorage.removeItem('trufo_objects')
+}
+
+// Get statistics from stored objects (for homepage)
+export function getStats() {
+  const objects = getStoredObjects()
+  const now = Date.now()
+  const active = objects.filter(obj => obj.ttl > now)
+  const expired = objects.filter(obj => obj.ttl <= now)
+  const totalHits = objects.reduce((sum, obj) => sum + obj.hitCount, 0)
+
+  return {
+    total: objects.length,
+    active: active.length,
+    expired: expired.length,
+    totalHits
+  }
 }

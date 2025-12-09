@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import SignInPrompt from '../components/SignInPrompt'
 import { useAuth } from '../components/AuthProvider'
-import { getAllObjects, updateObject, deleteObject, cleanupExpiredObjects } from '../lib/storage'
+import { adminGetAllObjects, updateObject, deleteObject, adminCleanupExpired } from '../lib/api-storage'
 import { checkAdminAccess, authenticateAdmin, clearAdminToken, AdminAuth } from '../lib/admin'
 import { TrufoObject } from '../types'
 
@@ -32,8 +32,10 @@ export default function AdminPage() {
     }
   }, [user])
 
-  const loadObjects = () => {
-    const allObjects = getAllObjects()
+  const loadObjects = async () => {
+    if (!adminAuth.token) return
+
+    const allObjects = await adminGetAllObjects(adminAuth.token)
     const now = Date.now()
 
     let filteredObjects = allObjects
@@ -77,11 +79,13 @@ export default function AdminPage() {
     setAdminAuth({ isAdmin: false, token: null })
   }
 
-  const handleCleanup = () => {
-    const removedCount = cleanupExpiredObjects()
-    if (removedCount > 0) {
+  const handleCleanup = async () => {
+    if (!adminAuth.token) return
+
+    const result = await adminCleanupExpired(adminAuth.token)
+    if (result.success && result.count > 0) {
       loadObjects()
-      alert(`Cleaned up ${removedCount} expired objects`)
+      alert(result.message || `Cleaned up ${result.count} expired objects`)
     } else {
       alert('No expired objects to clean up')
     }

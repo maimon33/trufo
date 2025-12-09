@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { getObject } from '../lib/storage'
+import { accessObject } from '../lib/api-storage'
 
 export default function ApiAccess() {
   const { name } = useParams<{ name: string }>()
@@ -16,41 +16,41 @@ export default function ApiAccess() {
       return
     }
 
-    try {
-      const obj = getObject(name, token)
-      if (!obj) {
-        document.body.innerHTML = JSON.stringify({
-          error: 'Object not found or expired',
-          status: 404
-        }, null, 2)
-        return
-      }
-
-      // Return pure JSON response
-      const response = {
-        name: obj.name,
-        type: obj.type,
-        content: obj.content,
-        hitCount: obj.hitCount,
-        lastHit: obj.lastHit,
-        ttl: obj.ttl,
-        expires: new Date(obj.ttl).toISOString(),
-        status: 200
-      }
-
-      document.body.innerHTML = JSON.stringify(response, null, 2)
-
-      // Set content type if possible
+    const fetchObject = async () => {
       try {
-        document.contentType = 'application/json'
-      } catch {}
+        const result = await accessObject(name, token)
+        if (!result) {
+          document.body.innerHTML = JSON.stringify({
+            error: 'Object not found or expired',
+            status: 404
+          }, null, 2)
+          return
+        }
 
-    } catch (err) {
-      document.body.innerHTML = JSON.stringify({
-        error: 'Error accessing object',
-        status: 500
-      }, null, 2)
+        // Return pure JSON response
+        const response = {
+          name: name,
+          content: result.content,
+          hitCount: result.hits,
+          status: 200
+        }
+
+        document.body.innerHTML = JSON.stringify(response, null, 2)
+
+        // Set content type if possible
+        try {
+          document.contentType = 'application/json'
+        } catch {}
+
+      } catch (err) {
+        document.body.innerHTML = JSON.stringify({
+          error: 'Error accessing object',
+          status: 500
+        }, null, 2)
+      }
     }
+
+    fetchObject()
   }, [name, token])
 
   return <div>Loading...</div>

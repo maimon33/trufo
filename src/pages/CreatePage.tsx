@@ -2,7 +2,7 @@ import { useState } from 'react'
 import Layout from '../components/Layout'
 import SignInPrompt from '../components/SignInPrompt'
 import { useAuth } from '../components/AuthProvider'
-import { createObject } from '../lib/storage'
+import { createObject } from '../lib/api-storage'
 import { CreateObjectData, TrufoObject, ObjectType } from '../types'
 
 export default function CreatePage() {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { getObject } from '../lib/storage'
+import { accessObject } from '../lib/api-storage'
 import { TrufoObject } from '../types'
 
 export default function AccessPage() {
@@ -20,18 +20,36 @@ export default function AccessPage() {
       return
     }
 
-    try {
-      const obj = getObject(name, token)
-      if (!obj) {
-        setError('Object not found or expired')
-      } else {
-        setObject(obj)
+    const fetchObject = async () => {
+      try {
+        const result = await accessObject(name, token)
+        if (!result) {
+          setError('Object not found or expired')
+        } else {
+          // Create a mock object for display (we only get content and hits from API)
+          const obj: TrufoObject = {
+            id: name,
+            name,
+            type: 'string', // We don't know the type from access, assume string
+            content: result.content,
+            token,
+            ttl: Date.now() + 86400000, // Mock TTL
+            ownerEmail: 'unknown',
+            ownerName: 'Unknown',
+            hitCount: result.hits,
+            lastHit: Date.now(),
+            createdAt: Date.now()
+          }
+          setObject(obj)
+        }
+      } catch (err) {
+        setError('Error accessing object')
+      } finally {
+        setLoading(false)
       }
-    } catch (err) {
-      setError('Error accessing object')
-    } finally {
-      setLoading(false)
     }
+
+    fetchObject()
   }, [name, token])
 
   if (loading) {

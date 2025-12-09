@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import SignInPrompt from '../components/SignInPrompt'
 import { useAuth } from '../components/AuthProvider'
-import { getUserObjects, getUserActiveObjects, getUserExpiredObjects, updateObject, deleteObject, cleanupExpiredObjects } from '../lib/storage'
+import { getUserObjects, getUserActiveObjects, getUserExpiredObjects, updateObject, deleteObject, cleanupExpiredObjects } from '../lib/api-storage'
 import { TrufoObject } from '../types'
 
 export default function ManagePage() {
@@ -12,16 +12,16 @@ export default function ManagePage() {
   const [editingObject, setEditingObject] = useState<TrufoObject | null>(null)
   const [editContent, setEditContent] = useState('')
 
-  const loadObjects = () => {
+  const loadObjects = async () => {
     if (!user) return
 
     let filteredObjects: TrufoObject[]
     if (filter === 'active') {
-      filteredObjects = getUserActiveObjects(user.email)
+      filteredObjects = await getUserActiveObjects(user.email)
     } else if (filter === 'expired') {
-      filteredObjects = getUserExpiredObjects(user.email)
+      filteredObjects = await getUserExpiredObjects(user.email)
     } else {
-      filteredObjects = getUserObjects(user.email)
+      filteredObjects = await getUserObjects(user.email)
     }
 
     setObjects(filteredObjects)
@@ -31,8 +31,10 @@ export default function ManagePage() {
     loadObjects()
   }, [filter, user])
 
-  const handleCleanup = () => {
-    const removedCount = cleanupExpiredObjects()
+  const handleCleanup = async () => {
+    if (!user) return
+
+    const removedCount = await cleanupExpiredObjects(user.email)
     if (removedCount > 0) {
       loadObjects()
       alert(`Cleaned up ${removedCount} expired objects`)
