@@ -46,8 +46,20 @@ jobs:
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.json" --content-type "application/json"
 
       - name: Deploy Lambda infrastructure
+        if: ${{ secrets.ADMIN_TOKEN }}
         run: |
+          if [ ! -d "lambda" ]; then
+            echo "Lambda directory not found, skipping Lambda deployment"
+            exit 0
+          fi
+
           cd lambda
+
+          # Check if required files exist
+          if [ ! -f "cloudformation.yaml" ] || [ ! -f "trufo-api.js" ]; then
+            echo "Required Lambda files not found, skipping Lambda deployment"
+            exit 0
+          fi
 
           # Deploy or update CloudFormation stack
           aws cloudformation deploy \
@@ -68,13 +80,19 @@ jobs:
           echo "Lambda infrastructure and code deployed successfully"
 
       - name: Get Lambda Function URL
+        if: ${{ secrets.ADMIN_TOKEN }}
         run: |
-          FUNCTION_URL=$(aws cloudformation describe-stacks \
-            --stack-name trufo-api-stack \
-            --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' \
-            --output text)
-          echo "Lambda Function URL: $FUNCTION_URL"
-          echo "Make sure VITE_LAMBDA_API_URL secret is set to: $FUNCTION_URL"
+          # Check if stack exists
+          if aws cloudformation describe-stacks --stack-name trufo-api-stack >/dev/null 2>&1; then
+            FUNCTION_URL=$(aws cloudformation describe-stacks \
+              --stack-name trufo-api-stack \
+              --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' \
+              --output text)
+            echo "Lambda Function URL: $FUNCTION_URL"
+            echo "Make sure VITE_LAMBDA_API_URL secret is set to: $FUNCTION_URL"
+          else
+            echo "CloudFormation stack not found, Lambda URL not available"
+          fi
 
       - name: Invalidate CloudFront (optional)
         if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
