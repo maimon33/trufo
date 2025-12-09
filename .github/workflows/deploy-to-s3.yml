@@ -46,8 +46,12 @@ jobs:
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.json" --content-type "application/json"
 
       - name: Deploy Lambda infrastructure
-        if: ${{ secrets.ADMIN_TOKEN != '' }}
         run: |
+          if [ -z "${{ secrets.ADMIN_TOKEN }}" ]; then
+            echo "ADMIN_TOKEN secret not set, skipping Lambda deployment"
+            exit 0
+          fi
+
           if [ ! -d "lambda" ]; then
             echo "Lambda directory not found, skipping Lambda deployment"
             exit 0
@@ -80,8 +84,12 @@ jobs:
           echo "Lambda infrastructure and code deployed successfully"
 
       - name: Get Lambda Function URL
-        if: ${{ secrets.ADMIN_TOKEN != '' }}
         run: |
+          if [ -z "${{ secrets.ADMIN_TOKEN }}" ]; then
+            echo "ADMIN_TOKEN secret not set, skipping Lambda URL output"
+            exit 0
+          fi
+
           # Check if stack exists
           if aws cloudformation describe-stacks --stack-name trufo-api-stack >/dev/null 2>&1; then
             FUNCTION_URL=$(aws cloudformation describe-stacks \
@@ -95,6 +103,9 @@ jobs:
           fi
 
       - name: Invalidate CloudFront (optional)
-        if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
         run: |
+          if [ -z "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" ]; then
+            echo "CLOUDFRONT_DISTRIBUTION_ID secret not set, skipping CloudFront invalidation"
+            exit 0
+          fi
           aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
