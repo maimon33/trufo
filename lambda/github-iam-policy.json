@@ -25,12 +25,35 @@
       "Resource": "*"
     },
     {
+      "Sid": "DynamoDBAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource",
+        "dynamodb:ListTagsOfResource",
+        "dynamodb:DescribeContinuousBackups",
+        "dynamodb:UpdateContinuousBackups"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/trufo-objects",
+        "arn:aws:dynamodb:*:*:table/trufo-objects/*"
+      ]
+    },
+    {
       "Sid": "LambdaAccess",
       "Effect": "Allow",
       "Action": [
+        "lambda:CreateFunction",
         "lambda:UpdateFunctionCode",
         "lambda:GetFunction",
-        "lambda:UpdateFunctionConfiguration"
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:DeleteFunction",
+        "lambda:TagResource",
+        "lambda:UntagResource"
       ],
       "Resource": "arn:aws:lambda:*:*:function:trufo-api"
     },
@@ -43,17 +66,33 @@
         "cloudformation:DescribeChangeSet",
         "cloudformation:CreateChangeSet",
         "cloudformation:ExecuteChangeSet",
-        "cloudformation:GetTemplate"
+        "cloudformation:GetTemplate",
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack"
       ],
       "Resource": "arn:aws:cloudformation:*:*:stack/trufo-api-stack/*"
     },
     {
-      "Sid": "IAMPassRole",
+      "Sid": "IAMRoleAccess",
       "Effect": "Allow",
       "Action": [
-        "iam:PassRole"
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:PassRole",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole"
       ],
-      "Resource": "arn:aws:iam::*:role/*trufo*"
+      "Resource": [
+        "arn:aws:iam::*:role/trufo-*",
+        "arn:aws:iam::*:role/*LambdaExecutionRole*"
+      ]
     }
   ]
 }
