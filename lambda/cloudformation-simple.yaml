@@ -89,7 +89,6 @@ Resources:
         Variables:
           DYNAMODB_TABLE_NAME: !Ref TrufoObjectsTable
           ADMIN_TOKEN: !Ref AdminToken
-          AWS_REGION: !Ref AWS::Region
 
 Outputs:
   DynamoDBTableName:
