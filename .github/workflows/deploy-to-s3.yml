@@ -45,9 +45,18 @@ jobs:
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.html" --content-type "text/html"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.json" --content-type "application/json"
 
-      - name: Deploy Lambda function
+      - name: Deploy Lambda infrastructure
         run: |
           cd lambda
+
+          # Deploy or update CloudFormation stack
+          aws cloudformation deploy \
+            --template-file cloudformation.yaml \
+            --stack-name trufo-api-stack \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides AdminToken="${{ secrets.ADMIN_TOKEN }}"
+
+          # Build Lambda package
           npm install --production
           zip -r trufo-api.zip . -x "*.md" "cloudformation.yaml" "initial-setup.md" "deploy.md" "github-iam-policy.json"
 
@@ -56,7 +65,7 @@ jobs:
             --function-name trufo-api \
             --zip-file fileb://trufo-api.zip
 
-          echo "Lambda function updated successfully"
+          echo "Lambda infrastructure and code deployed successfully"
 
       - name: Get Lambda Function URL
         run: |
