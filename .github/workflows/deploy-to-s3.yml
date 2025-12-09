@@ -43,3 +43,8 @@ jobs:
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.css" --content-type "text/css"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.html" --content-type "text/html"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.json" --content-type "application/json"
+
+      - name: Invalidate CloudFront (optional)
+        if: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"

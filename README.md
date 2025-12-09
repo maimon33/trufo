@@ -11,14 +11,15 @@ A secure, token-based object storage system with Google OAuth authentication, us
 - **TTL Management**: Automatic expiration and cleanup of objects
 - **Analytics Tracking**: Hit count and access time tracking
 - **Admin Dashboard**: S3 token-based admin access to view all objects
-- **Static Deployment**: Runs entirely client-side on S3
+- **Static Deployment**: Runs entirely client-side with S3 + CloudFront
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+
-- AWS S3 bucket (for static hosting and admin token)
+- AWS S3 bucket (for data storage and admin token)
+- AWS CloudFront distribution (recommended for HTTPS and global CDN)
 - Google OAuth application (for user authentication)
 
 ### Installation
@@ -116,37 +117,69 @@ npm run dev
 3. **Manage Any Object**: Edit or delete objects from any user
 4. **Analytics**: View system-wide hit counts and usage patterns
 
+## Required GitHub Secrets
+
+For automated deployment, configure these secrets in your GitHub repository:
+
+**AWS Deployment:**
+- `AWS_ACCESS_KEY_ID` - AWS access key
+- `AWS_SECRET_ACCESS_KEY` - AWS secret key
+- `AWS_REGION` - AWS region (e.g., us-east-1)
+- `S3_BUCKET` - S3 bucket name
+- `CLOUDFRONT_DISTRIBUTION_ID` - CloudFront distribution ID (optional)
+
+**Application Configuration:**
+- `VITE_GOOGLE_CLIENT_ID` - Google OAuth client ID
+- `VITE_S3_BUCKET_URL` - S3 bucket URL for data access
+
 ## API Endpoints
 
-### Public Endpoints
-- `GET /api/objects/[name]?token=[token]` - Access object by name and token
+### Object Access
+- `GET /access/[name]?token=[token]` - Access object by name and token
 
-### Admin Endpoints (require admin authentication)
-- `POST /api/objects/create` - Create new object
-- `GET /api/admin/objects` - List all objects with pagination and filtering
-- `GET /api/admin/cleanup` - Get cleanup statistics
-- `POST /api/admin/cleanup` - Trigger manual cleanup
+### Admin Routes
+- `/admin` - Admin dashboard (requires admin token)
+- `/create` - Create new objects (requires Google sign-in)
+- `/manage` - Manage user's objects (requires Google sign-in)
 
-### Authentication Endpoints
-- `/api/auth/signin` - Google OAuth sign-in
-- `/api/auth/signout` - Sign out
-- `/api/auth/session` - Get current session
+## Deployment Options
+
+### Option 1: S3 + CloudFront (Recommended)
+
+**Pros:**
+- ✅ Global CDN with fast loading
+- ✅ Free HTTPS with AWS Certificate Manager
+- ✅ Custom domain support
+- ✅ Integrated with AWS ecosystem
+- ✅ Cost-effective for high traffic
+
+**Setup:**
+1. Create S3 bucket for storage
+2. Create CloudFront distribution pointing to S3
+3. Configure custom domain with Route 53
+4. Deploy using GitHub Actions
+
+### Option 2: Netlify
+
+**Pros:**
+- ✅ Simple setup and deployment
+- ✅ Free HTTPS and custom domains
+- ✅ Excellent SPA routing support
+- ✅ Built-in CI/CD from GitHub
+- ✅ Free tier for low traffic
+
+**Setup:**
+1. Connect GitHub repo to Netlify
+2. Configure environment variables
+3. Deploy automatically on push
 
 ## Architecture
 
-- **Frontend**: Next.js with TypeScript and Tailwind CSS
-- **Backend**: Next.js API routes
-- **Database**: PostgreSQL with Prisma ORM
-- **Authentication**: NextAuth.js with Google OAuth
-- **Storage**: AWS S3
-- **Scheduling**: Node-cron for automated cleanup
-
-## Database Schema
-
-- **Users**: Google OAuth user data and admin privileges
-- **StorageObjects**: Object metadata, tokens, and TTL
-- **ObjectAnalytics**: Hit tracking and usage statistics
-- **NextAuth tables**: Session and account management
+- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
+- **Database**: JSON storage in S3 (client-side)
+- **Authentication**: Google OAuth with Identity Services
+- **Hosting**: S3 + CloudFront or Netlify
+- **Admin Access**: S3-based token authentication
 
 ## Development
 
@@ -154,25 +187,18 @@ npm run dev
 
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
-- `npm run db:generate` - Generate Prisma client
-- `npm run db:migrate` - Run database migrations
-- `npm run db:push` - Push schema to database
-- `npm run db:studio` - Open Prisma Studio
+- `npm run preview` - Preview production build locally
+- `npm run lint` - Run ESLint (if configured)
 
 ### Project Structure
 
 ```
 src/
 ├── components/          # Reusable React components
-├── lib/                # Utility libraries (auth, database, S3, etc.)
-├── pages/              # Next.js pages and API routes
-│   ├── api/            # API endpoints
-│   ├── admin/          # Admin dashboard pages
-│   └── onboard.tsx     # Public onboarding page
-├── styles/             # CSS styles
-└── types/              # TypeScript type definitions
+├── lib/                # Utility libraries (auth, storage, admin)
+├── pages/              # Application pages/routes
+├── types/              # TypeScript type definitions
+└── main.tsx            # Application entry point
 ```
 
 ## Security Features
