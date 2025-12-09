@@ -65,9 +65,9 @@ jobs:
             exit 0
           fi
 
-          # Deploy or update CloudFormation stack
+          # Deploy or update CloudFormation stack (use simple template first)
           aws cloudformation deploy \
-            --template-file cloudformation.yaml \
+            --template-file cloudformation-simple.yaml \
             --stack-name trufo-api-stack \
             --capabilities CAPABILITY_IAM \
             --parameter-overrides AdminToken="${{ secrets.ADMIN_TOKEN }}"
@@ -92,14 +92,11 @@ jobs:
 
           # Check if stack exists
           if aws cloudformation describe-stacks --stack-name trufo-api-stack >/dev/null 2>&1; then
-            FUNCTION_URL=$(aws cloudformation describe-stacks \
-              --stack-name trufo-api-stack \
-              --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' \
-              --output text)
-            echo "Lambda Function URL: $FUNCTION_URL"
-            echo "Make sure VITE_LAMBDA_API_URL secret is set to: $FUNCTION_URL"
+            echo "Lambda function deployed successfully"
+            echo "Note: Function URL needs to be created manually via AWS Console"
+            echo "Go to Lambda console -> trufo-api function -> Configuration -> Function URL"
           else
-            echo "CloudFormation stack not found, Lambda URL not available"
+            echo "CloudFormation stack not found, Lambda deployment failed"
           fi
 
       - name: Invalidate CloudFront (optional)
