@@ -67,9 +67,11 @@
         "cloudformation:CreateChangeSet",
         "cloudformation:ExecuteChangeSet",
         "cloudformation:GetTemplate",
+        "cloudformation:GetTemplateSummary",
         "cloudformation:CreateStack",
         "cloudformation:UpdateStack",
-        "cloudformation:DeleteStack"
+        "cloudformation:DeleteStack",
+        "cloudformation:ValidateTemplate"
       ],
       "Resource": "arn:aws:cloudformation:*:*:stack/trufo-api-stack/*"
     },
