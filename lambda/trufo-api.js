@@ -27,12 +27,13 @@ exports.handler = async (event) => {
   console.log('Event:', JSON.stringify(event, null, 2));
 
   // Handle preflight OPTIONS request
-  if (event.requestContext.http.method === 'OPTIONS') {
+  if (event.requestContext?.http?.method === 'OPTIONS') {
     return response(200, { message: 'OK' });
   }
 
-  const { method } = event.requestContext.http;
-  const { pathname } = event.requestContext.http;
+  // Function URL vs API Gateway event compatibility
+  const method = event.requestContext?.http?.method || event.httpMethod;
+  const pathname = event.requestContext?.http?.path || event.path || event.rawPath;
 
   // Log request for debugging
   console.log(`${method} ${pathname}`);
