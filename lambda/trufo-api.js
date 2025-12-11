@@ -98,21 +98,26 @@ exports.handler = async (event) => {
 async function createObject(data) {
   console.log('Creating object with data:', JSON.stringify(data, null, 2));
 
-  const { id, name, type, content, ttl, token, ownerEmail, ownerName } = data;
+  const { name, type, content, ttlHours, ownerEmail, ownerName } = data;
 
-  if (!id || !name || !token) {
-    return response(400, { error: 'Missing required fields: id, name, token' });
+  if (!name || !type || content === undefined || !ttlHours) {
+    return response(400, { error: 'Missing required fields: name, type, content, ttlHours' });
   }
+
+  // Generate missing fields
+  const id = `obj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const token = Math.random().toString(36).substr(2, 12);
+  const ttl = Date.now() + (parseInt(ttlHours) * 60 * 60 * 1000); // Convert hours to milliseconds
 
   const item = {
     id,
     name,
     type,
     content,
-    ttl: parseInt(ttl),
+    ttl,
     token,
-    ownerEmail,
-    ownerName,
+    ownerEmail: ownerEmail || 'anonymous',
+    ownerName: ownerName || 'Anonymous User',
     hitCount: 0,
     createdAt: Date.now(),
     lastHit: null
