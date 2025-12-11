@@ -25,6 +25,15 @@ exports.handler = async (event) => {
     return response(200, { message: 'OK' });
   }
 
+  // Check Origin header to block direct API access
+  const origin = event.headers?.origin || event.headers?.Origin;
+  const allowedOrigins = ['https://trufo.maimons.org', 'http://localhost:5173', 'http://localhost:3000'];
+
+  if (!origin || !allowedOrigins.includes(origin)) {
+    console.log('Blocked request from origin:', origin);
+    return response(403, { error: 'Access denied: Invalid origin' });
+  }
+
   // Function URL vs API Gateway event compatibility
   const method = event.requestContext?.http?.method || event.httpMethod;
   const pathname = event.requestContext?.http?.path || event.path || event.rawPath;
