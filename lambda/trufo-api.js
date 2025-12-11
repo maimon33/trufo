@@ -182,13 +182,13 @@ async function getObject(name, token) {
   // Return content based on type
   let responseContent;
   if (object.type === 'toggle') {
-    responseContent = !object.content; // Toggle the boolean
-    // Update the object with new content
+    responseContent = object.content; // Return current value first
+    // Update the object with toggled content AFTER reading
     const toggleUpdateCommand = new PutCommand({
       TableName: TABLE_NAME,
       Item: {
         ...object,
-        content: responseContent,
+        content: !object.content, // Store the toggled value
         hitCount: object.hitCount + 1,
         lastHit: Date.now()
       }

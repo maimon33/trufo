@@ -24,18 +24,24 @@ export default function CreatePage() {
     setResult(null)
 
     try {
-      const createData: CreateObjectData = {
+      const createData: CreateObjectData & { ownerEmail: string; ownerName: string } = {
         name: formData.name,
         type: formData.type,
         content: formData.type === 'toggle'
           ? formData.content === 'true'
           : formData.content,
-        ttlHours: parseInt(formData.ttlHours)
+        ttlHours: parseInt(formData.ttlHours),
+        ownerEmail: user!.email,
+        ownerName: user!.name
       }
 
-      const newObject = createObject(createData, user!)
-      setResult(newObject)
-      setFormData({ name: '', type: 'string', content: '', ttlHours: '24' })
+      const success = await createObject(createData)
+      if (success) {
+        setResult({ ...createData, id: 'created', token: 'generated', ttl: Date.now() + (parseInt(formData.ttlHours) * 60 * 60 * 1000), createdAt: Date.now(), hitCount: 0 } as TrufoObject)
+        setFormData({ name: '', type: 'string', content: '', ttlHours: '24' })
+      } else {
+        throw new Error('Failed to create object')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
