@@ -53,7 +53,11 @@
         "lambda:UpdateFunctionConfiguration",
         "lambda:DeleteFunction",
         "lambda:TagResource",
-        "lambda:UntagResource"
+        "lambda:UntagResource",
+        "lambda:CreateFunctionUrlConfig",
+        "lambda:UpdateFunctionUrlConfig",
+        "lambda:GetFunctionUrlConfig",
+        "lambda:DeleteFunctionUrlConfig"
       ],
       "Resource": "arn:aws:lambda:*:*:function:trufo-api"
     },

@@ -81,15 +81,20 @@ jobs:
             --function-name trufo-api \
             --zip-file fileb://trufo-api.zip
 
-          # Create or update Function URL (ignore if already exists)
-          aws lambda create-function-url-config \
-            --function-name trufo-api \
-            --auth-type NONE \
-            --cors AllowOrigins="*",AllowMethods="GET,POST,PUT,DELETE",AllowHeaders="Content-Type,Authorization" \
-            || aws lambda update-function-url-config \
-               --function-name trufo-api \
-               --auth-type NONE \
-               --cors AllowOrigins="*",AllowMethods="GET,POST,PUT,DELETE",AllowHeaders="Content-Type,Authorization"
+          # Create or update Function URL
+          if aws lambda get-function-url-config --function-name trufo-api >/dev/null 2>&1; then
+            echo "Function URL exists, updating configuration..."
+            aws lambda update-function-url-config \
+              --function-name trufo-api \
+              --auth-type NONE \
+              --cors AllowOrigins="*",AllowMethods="GET,POST,PUT,DELETE",AllowHeaders="Content-Type,Authorization"
+          else
+            echo "Creating new Function URL..."
+            aws lambda create-function-url-config \
+              --function-name trufo-api \
+              --auth-type NONE \
+              --cors AllowOrigins="*",AllowMethods="GET,POST,PUT,DELETE",AllowHeaders="Content-Type,Authorization"
+          fi
 
           echo "Lambda infrastructure and code deployed successfully"
 
