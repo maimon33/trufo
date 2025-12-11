@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './components/AuthProvider'
 import HomePage from './pages/HomePage'
 import CreatePage from './pages/CreatePage'
@@ -18,6 +18,7 @@ function App() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/access/:name" element={<AccessPage />} />
           <Route path="/api/:name" element={<ApiAccess />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     </AuthProvider>

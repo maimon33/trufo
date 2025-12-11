@@ -35,9 +35,9 @@ export default function CreatePage() {
         ownerName: user!.name
       }
 
-      const success = await createObject(createData)
-      if (success) {
-        setResult({ ...createData, id: 'created', token: 'generated', ttl: Date.now() + (parseInt(formData.ttlHours) * 60 * 60 * 1000), createdAt: Date.now(), hitCount: 0 } as TrufoObject)
+      const result = await createObject(createData)
+      if (result && result.object) {
+        setResult(result.object)
         setFormData({ name: '', type: 'string', content: '', ttlHours: '24' })
       } else {
         throw new Error('Failed to create object')

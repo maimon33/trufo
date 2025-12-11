@@ -38,16 +38,16 @@ async function apiRequest<T = any>(
 }
 
 // Create a new object
-export async function createObject(object: TrufoObject): Promise<boolean> {
+export async function createObject(object: any): Promise<ApiResponse | null> {
   try {
-    await apiRequest<ApiResponse>('/objects', {
+    const response = await apiRequest<ApiResponse>('/objects', {
       method: 'POST',
       body: JSON.stringify(object),
     })
-    return true
+    return response
   } catch (error) {
     console.error('Failed to create object:', error)
-    return false
+    return null
   }
 }
 
