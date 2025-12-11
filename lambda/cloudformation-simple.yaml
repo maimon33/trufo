@@ -90,7 +90,43 @@ Resources:
           DYNAMODB_TABLE_NAME: !Ref TrufoObjectsTable
           ADMIN_TOKEN: !Ref AdminToken
 
+  # Function URL
+  TrufoApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref TrufoApiFunction
+      AuthType: NONE
+      Cors:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+        MaxAge: 300
+
+  # Permission for Function URL
+  FunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref TrufoApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
 Outputs:
+  FunctionUrl:
+    Description: 'Lambda Function URL'
+    Value: !GetAtt TrufoApiFunctionUrl.FunctionUrl
+    Export:
+      Name: TrufoApiFunctionUrl
+
   DynamoDBTableName:
     Description: 'DynamoDB Table Name'
     Value: !Ref TrufoObjectsTable
