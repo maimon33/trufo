@@ -57,7 +57,10 @@
         "lambda:CreateFunctionUrlConfig",
         "lambda:UpdateFunctionUrlConfig",
         "lambda:GetFunctionUrlConfig",
-        "lambda:DeleteFunctionUrlConfig"
+        "lambda:DeleteFunctionUrlConfig",
+        "lambda:AddPermission",
+        "lambda:RemovePermission",
+        "lambda:GetPolicy"
       ],
       "Resource": "arn:aws:lambda:*:*:function:trufo-api"
     },
