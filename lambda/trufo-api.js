@@ -11,7 +11,8 @@ const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'trufo-objects';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  'Access-Control-Max-Age': '86400',
   'Content-Type': 'application/json'
 };
 
@@ -33,12 +34,18 @@ exports.handler = async (event) => {
   const { method } = event.requestContext.http;
   const { pathname } = event.requestContext.http;
 
+  // Log request for debugging
+  console.log(`${method} ${pathname}`);
+  console.log('Headers:', JSON.stringify(event.headers, null, 2));
+
   try {
     // Parse request body if present
     let body = {};
     if (event.body) {
       body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
     }
+
+    console.log('Request body:', JSON.stringify(body, null, 2));
 
     // Route requests
     switch (`${method} ${pathname}`) {
@@ -88,14 +95,20 @@ exports.handler = async (event) => {
 
 // Create a new object
 async function createObject(data) {
+  console.log('Creating object with data:', JSON.stringify(data, null, 2));
+
   const { id, name, type, content, ttl, token, ownerEmail, ownerName } = data;
+
+  if (!id || !name || !token) {
+    return response(400, { error: 'Missing required fields: id, name, token' });
+  }
 
   const item = {
     id,
     name,
     type,
     content,
-    ttl,
+    ttl: parseInt(ttl),
     token,
     ownerEmail,
     ownerName,
@@ -104,13 +117,21 @@ async function createObject(data) {
     lastHit: null
   };
 
-  const command = new PutCommand({
-    TableName: TABLE_NAME,
-    Item: item
-  });
+  console.log('Inserting item to DynamoDB:', JSON.stringify(item, null, 2));
 
-  await docClient.send(command);
-  return response(201, { success: true, object: item });
+  try {
+    const command = new PutCommand({
+      TableName: TABLE_NAME,
+      Item: item
+    });
+
+    await docClient.send(command);
+    console.log('Item inserted successfully');
+    return response(201, { success: true, object: item });
+  } catch (error) {
+    console.error('Error inserting item to DynamoDB:', error);
+    return response(500, { error: 'Failed to create object', details: error.message });
+  }
 }
 
 // Get object by name and token
