@@ -69,9 +69,17 @@ Resources:
                   - !GetAtt TrufoObjectsTable.Arn
                   - !Sub "${TrufoObjectsTable.Arn}/index/*"
 
+  # CloudWatch Log Group
+  TrufoApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/trufo-api
+      RetentionInDays: 14
+
   # Lambda Function
   TrufoApiFunction:
     Type: AWS::Lambda::Function
+    DependsOn: TrufoApiLogGroup
     Properties:
       FunctionName: trufo-api
       Runtime: nodejs18.x
