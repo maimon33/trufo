@@ -107,7 +107,6 @@ Resources:
           - POST
           - PUT
           - DELETE
-          - OPTIONS
         AllowHeaders:
           - Content-Type
           - Authorization
