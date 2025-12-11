@@ -114,13 +114,19 @@ jobs:
             exit 0
           fi
 
-          # Check if stack exists
-          if aws cloudformation describe-stacks --stack-name trufo-api-stack >/dev/null 2>&1; then
-            echo "Lambda function deployed successfully"
-            echo "Note: Function URL needs to be created manually via AWS Console"
-            echo "Go to Lambda console -> trufo-api function -> Configuration -> Function URL"
+          # Get the Function URL
+          FUNCTION_URL=$(aws lambda get-function-url-config --function-name trufo-api --query 'FunctionUrl' --output text 2>/dev/null || echo "")
+
+          if [ -n "$FUNCTION_URL" ]; then
+            echo "🎉 Lambda Function URL: $FUNCTION_URL"
+            echo ""
+            echo "⚠️  IMPORTANT: Update GitHub Secret!"
+            echo "The Function URL has changed. Please update the GitHub secret:"
+            echo "Repository Settings → Secrets → VITE_LAMBDA_API_URL = $FUNCTION_URL"
+            echo ""
+            echo "Or trigger a new deployment after updating the secret."
           else
-            echo "CloudFormation stack not found, Lambda deployment failed"
+            echo "❌ Could not retrieve Function URL. Check Lambda function configuration."
           fi
 
       - name: Invalidate CloudFront (optional)
