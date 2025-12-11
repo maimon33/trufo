@@ -45,6 +45,11 @@ jobs:
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.html" --content-type "text/html"
           aws s3 cp dist/ s3://${{ secrets.S3_BUCKET }} --recursive --exclude "*" --include "*.json" --content-type "application/json"
 
+      - name: Configure S3 for SPA routing
+        run: |
+          # Configure S3 website with error document pointing to index.html for SPA routing
+          aws s3 website s3://${{ secrets.S3_BUCKET }} --index-document index.html --error-document index.html
+
       - name: Deploy Lambda infrastructure
         run: |
           if [ -z "${{ secrets.ADMIN_TOKEN }}" ]; then
