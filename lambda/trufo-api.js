@@ -7,19 +7,13 @@ const docClient = DynamoDBDocumentClient.from(client);
 
 const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'trufo-objects';
 
-// CORS headers
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-  'Access-Control-Max-Age': '86400',
-  'Content-Type': 'application/json'
-};
-
-// Response helper
+// Response helper (AWS Function URLs handle CORS automatically)
 const response = (statusCode, body, additionalHeaders = {}) => ({
   statusCode,
-  headers: { ...corsHeaders, ...additionalHeaders },
+  headers: {
+    'Content-Type': 'application/json',
+    ...additionalHeaders
+  },
   body: JSON.stringify(body)
 });
 
