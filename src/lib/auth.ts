@@ -103,22 +103,6 @@ export const signOut = (): void => {
   }
 }
 
-// Check if user is admin via S3 token fetch
-export const checkAdminStatus = async (userEmail: string, adminToken: string): Promise<boolean> => {
-  try {
-    // Try to fetch admin token from S3
-    const response = await fetch(`${import.meta.env.VITE_S3_BUCKET_URL}/admin/admin-token.txt`)
-
-    if (!response.ok) {
-      return false
-    }
-
-    const storedToken = (await response.text()).trim()
-    return storedToken === adminToken
-  } catch {
-    return false
-  }
-}
 
 // Declare global types for Google Identity Services
 declare global {

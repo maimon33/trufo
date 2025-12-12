@@ -1,4 +1,4 @@
-export type ObjectType = 'string' | 'toggle'
+export type ObjectType = 'string' | 'boolean' | 'toggle'
 
 export interface TrufoObject {
   id: string
@@ -12,6 +12,8 @@ export interface TrufoObject {
   lastHit?: number // timestamp
   ownerEmail: string
   ownerName: string
+  oneTimeAccess?: boolean // if true, delete after first access
+  totpSecret?: string // TOTP secret for MFA
 }
 
 export interface CreateObjectData {
@@ -19,4 +21,6 @@ export interface CreateObjectData {
   type: ObjectType
   content: string | boolean
   ttlHours: number
+  oneTimeAccess?: boolean
+  enableMFA?: boolean
 }

@@ -1,11 +1,79 @@
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, DeleteCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
+const crypto = require('crypto');
 
 // AWS_REGION is automatically available in Lambda environment
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
 const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'trufo-objects';
+
+// Encryption key (in production, use AWS KMS or environment variable)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32);
+const ALGORITHM = 'aes-256-gcm';
+
+// Encrypt content
+function encryptContent(text) {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipherGCM(ALGORITHM, ENCRYPTION_KEY, iv);
+  let encrypted = cipher.update(JSON.stringify(text), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString('hex')}:${encrypted}:${authTag.toString('hex')}`;
+}
+
+// Decrypt content
+function decryptContent(encryptedText) {
+  try {
+    const [ivHex, encrypted, authTagHex] = encryptedText.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+    const decipher = crypto.createDecipherGCM(ALGORITHM, ENCRYPTION_KEY, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return JSON.parse(decrypted);
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    return encryptedText; // Return as-is if decryption fails (backwards compatibility)
+  }
+}
+
+// Generate TOTP secret
+function generateTOTPSecret() {
+  return crypto.randomBytes(20).toString('base32');
+}
+
+// Verify TOTP token
+function verifyTOTPToken(secret, token) {
+  if (!secret || !token) return false;
+
+  // TOTP algorithm - generates 6-digit code based on time window
+  const timeWindow = Math.floor(Date.now() / 30000); // 30-second window
+
+  // Generate codes for current and previous/next windows (allows for clock drift)
+  for (let i = -1; i <= 1; i++) {
+    const windowTime = timeWindow + i;
+    const hmac = crypto.createHmac('sha1', Buffer.from(secret, 'base32'));
+    hmac.update(Buffer.from(windowTime.toString(16).padStart(16, '0'), 'hex'));
+    const hash = hmac.digest();
+
+    // Extract dynamic binary code
+    const offset = hash[hash.length - 1] & 0xf;
+    const code = (
+      ((hash[offset] & 0x7f) << 24) |
+      ((hash[offset + 1] & 0xff) << 16) |
+      ((hash[offset + 2] & 0xff) << 8) |
+      (hash[offset + 3] & 0xff)
+    ) % 1000000;
+
+    if (code.toString().padStart(6, '0') === token) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 // Response helper (AWS Function URLs handle CORS automatically)
 const response = (statusCode, body, additionalHeaders = {}) => ({
@@ -60,8 +128,8 @@ exports.handler = async (event) => {
 
       // Get object by token and name
       case 'GET /objects':
-        const { name, token } = event.queryStringParameters || {};
-        return await getObject(name, token);
+        const { name, token, totpCode } = event.queryStringParameters || {};
+        return await getObject(name, token, totpCode);
 
       // Get user's objects
       case 'GET /user-objects':
@@ -77,15 +145,11 @@ exports.handler = async (event) => {
         const { id } = event.queryStringParameters || {};
         return await deleteObject(id);
 
-      // Admin: Get all objects
-      case 'GET /admin/objects':
-        const { adminToken } = event.queryStringParameters || {};
-        return await adminGetAllObjects(adminToken);
+      // Toggle boolean object
+      case 'POST /toggle':
+        const { name: toggleName, token: toggleToken } = body;
+        return await toggleBooleanObject(toggleName, toggleToken);
 
-      // Admin: Cleanup expired
-      case 'POST /admin/cleanup':
-        const { adminToken: cleanupToken } = body;
-        return await adminCleanup(cleanupToken);
 
       default:
         return response(404, { error: 'Not found' });
@@ -101,7 +165,7 @@ exports.handler = async (event) => {
 async function createObject(data) {
   console.log('Creating object with data:', JSON.stringify(data, null, 2));
 
-  const { name, type, content, ttlHours, ownerEmail, ownerName } = data;
+  const { name, type, content, ttlHours, ownerEmail, ownerName, oneTimeAccess, enableMFA } = data;
 
   if (!name || !type || content === undefined || !ttlHours) {
     return response(400, { error: 'Missing required fields: name, type, content, ttlHours' });
@@ -110,20 +174,25 @@ async function createObject(data) {
   // Generate missing fields
   const id = `obj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const token = Math.random().toString(36).substr(2, 12);
-  const ttl = Date.now() + (parseInt(ttlHours) * 60 * 60 * 1000); // Convert hours to milliseconds
+  const ttl = Date.now() + (parseFloat(ttlHours) * 60 * 60 * 1000); // Convert hours to milliseconds
+
+  // Encrypt content for security
+  const encryptedContent = encryptContent(content);
 
   const item = {
     id,
     name,
     type,
-    content,
+    content: encryptedContent,
     ttl,
     token,
     ownerEmail: ownerEmail || 'anonymous',
     ownerName: ownerName || 'Anonymous User',
     hitCount: 0,
     createdAt: Date.now(),
-    lastHit: null
+    lastHit: null,
+    oneTimeAccess: oneTimeAccess || false,
+    totpSecret: enableMFA ? generateTOTPSecret() : null
   };
 
   console.log('Inserting item to DynamoDB:', JSON.stringify(item, null, 2));
@@ -144,7 +213,7 @@ async function createObject(data) {
 }
 
 // Get object by name and token
-async function getObject(name, token) {
+async function getObject(name, token, totpCode) {
   if (!name || !token) {
     return response(400, { error: 'Name and token are required' });
   }
@@ -165,9 +234,31 @@ async function getObject(name, token) {
     return response(404, { error: 'Object not found or invalid token' });
   }
 
-  // Check if expired
+  // Check if expired - DELETE expired objects
   if (object.ttl <= Date.now()) {
-    return response(410, { error: 'Object has expired' });
+    // Delete expired object
+    const deleteCommand = new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: { id: object.id }
+    });
+    await docClient.send(deleteCommand);
+
+    return response(410, { error: 'Object has expired and has been deleted' });
+  }
+
+  // Check TOTP MFA if enabled
+  if (object.totpSecret) {
+    if (!totpCode) {
+      return response(403, {
+        error: 'TOTP verification required',
+        requiresTOTP: true,
+        totpQR: object.hitCount === 0 ? `otpauth://totp/Trufo:${object.name}?secret=${object.totpSecret}&issuer=Trufo` : undefined
+      });
+    }
+
+    if (!verifyTOTPToken(object.totpSecret, totpCode)) {
+      return response(403, { error: 'Invalid TOTP code' });
+    }
   }
 
   // Update hit count
@@ -182,26 +273,52 @@ async function getObject(name, token) {
 
   await docClient.send(updateCommand);
 
+  // Decrypt content
+  const decryptedContent = decryptContent(object.content);
+
+  // Handle one-time access - DELETE after reading
+  if (object.oneTimeAccess) {
+    const deleteCommand = new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: { id: object.id }
+    });
+    await docClient.send(deleteCommand);
+  }
+
   // Return content based on type
   let responseContent;
   if (object.type === 'toggle') {
-    responseContent = object.content; // Return current value first
-    // Update the object with toggled content AFTER reading
-    const toggleUpdateCommand = new PutCommand({
-      TableName: TABLE_NAME,
-      Item: {
-        ...object,
-        content: !object.content, // Store the toggled value
-        hitCount: object.hitCount + 1,
-        lastHit: Date.now()
-      }
-    });
-    await docClient.send(toggleUpdateCommand);
+    responseContent = decryptedContent; // Return current value first
+
+    // Only toggle if not one-time access (since object is deleted)
+    if (!object.oneTimeAccess) {
+      // Update the object with toggled content AFTER reading
+      const toggledContent = !decryptedContent;
+      const encryptedToggled = encryptContent(toggledContent);
+
+      const toggleUpdateCommand = new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          ...object,
+          content: encryptedToggled, // Store encrypted toggled value
+          hitCount: object.hitCount + 1,
+          lastHit: Date.now()
+        }
+      });
+      await docClient.send(toggleUpdateCommand);
+    }
   } else {
-    responseContent = object.content;
+    // For 'string' and 'boolean' types, just return the content
+    responseContent = decryptedContent;
   }
 
-  return response(200, { content: responseContent, hits: object.hitCount + 1 });
+  const responseData = {
+    content: responseContent,
+    hits: object.hitCount + 1
+  };
+
+
+  return response(200, responseData);
 }
 
 // Get all objects for a user
@@ -266,56 +383,66 @@ async function deleteObject(id) {
   return response(200, { success: true });
 }
 
-// Admin: Get all objects
-async function adminGetAllObjects(adminToken) {
-  // Verify admin token (you can implement S3 check here or use env var)
-  const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'your-admin-token';
-
-  if (adminToken !== ADMIN_TOKEN) {
-    return response(403, { error: 'Invalid admin token' });
+// Toggle boolean object
+async function toggleBooleanObject(name, token) {
+  if (!name || !token) {
+    return response(400, { error: 'Name and token are required' });
   }
 
-  const command = new ScanCommand({
-    TableName: TABLE_NAME
+  // Query by name and filter by token
+  const command = new QueryCommand({
+    TableName: TABLE_NAME,
+    IndexName: 'name-index',
+    KeyConditionExpression: '#name = :name',
+    ExpressionAttributeNames: { '#name': 'name' },
+    ExpressionAttributeValues: { ':name': name }
   });
 
   const result = await docClient.send(command);
-  return response(200, { objects: result.Items || [] });
-}
+  const object = result.Items.find(item => item.token === token);
 
-// Admin: Cleanup expired objects
-async function adminCleanup(adminToken) {
-  const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'your-admin-token';
-
-  if (adminToken !== ADMIN_TOKEN) {
-    return response(403, { error: 'Invalid admin token' });
+  if (!object) {
+    return response(404, { error: 'Object not found or invalid token' });
   }
 
-  const now = Date.now();
-
-  // Get all objects
-  const scanCommand = new ScanCommand({
-    TableName: TABLE_NAME
-  });
-
-  const result = await docClient.send(scanCommand);
-  const allObjects = result.Items || [];
-
-  // Find expired objects
-  const expiredObjects = allObjects.filter(obj => obj.ttl <= now);
-
-  // Delete expired objects
-  for (const obj of expiredObjects) {
+  // Check if expired
+  if (object.ttl <= Date.now()) {
     const deleteCommand = new DeleteCommand({
       TableName: TABLE_NAME,
-      Key: { id: obj.id }
+      Key: { id: object.id }
     });
     await docClient.send(deleteCommand);
+    return response(410, { error: 'Object has expired and has been deleted' });
   }
 
+  // Only allow toggle for boolean objects
+  if (object.type !== 'boolean') {
+    return response(400, { error: 'Toggle is only supported for boolean objects' });
+  }
+
+  // Decrypt current content
+  const currentContent = decryptContent(object.content);
+  const toggledContent = !currentContent;
+
+  // Encrypt new content
+  const encryptedContent = encryptContent(toggledContent);
+
+  // Update object with toggled content
+  const updateCommand = new PutCommand({
+    TableName: TABLE_NAME,
+    Item: {
+      ...object,
+      content: encryptedContent,
+      hitCount: object.hitCount + 1,
+      lastHit: Date.now()
+    }
+  });
+
+  await docClient.send(updateCommand);
+
   return response(200, {
-    success: true,
-    deletedCount: expiredObjects.length,
-    message: `Cleaned up ${expiredObjects.length} expired objects`
+    content: toggledContent,
+    hits: object.hitCount + 1
   });
 }
+

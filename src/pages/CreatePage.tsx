@@ -11,7 +11,9 @@ export default function CreatePage() {
     name: '',
     type: 'string' as ObjectType,
     content: '',
-    ttlHours: '24'
+    ttlHours: '24',
+    oneTimeAccess: false,
+    enableMFA: false
   })
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<TrufoObject | null>(null)
@@ -27,10 +29,12 @@ export default function CreatePage() {
       const createData: CreateObjectData & { ownerEmail: string; ownerName: string } = {
         name: formData.name,
         type: formData.type,
-        content: formData.type === 'toggle'
+        content: formData.type === 'toggle' || formData.type === 'boolean'
           ? formData.content === 'true'
           : formData.content,
         ttlHours: parseInt(formData.ttlHours),
+        oneTimeAccess: formData.oneTimeAccess,
+        enableMFA: formData.enableMFA,
         ownerEmail: user!.email,
         ownerName: user!.name
       }
@@ -38,7 +42,7 @@ export default function CreatePage() {
       const result = await createObject(createData)
       if (result && result.object) {
         setResult(result.object)
-        setFormData({ name: '', type: 'string', content: '', ttlHours: '24' })
+        setFormData({ name: '', type: 'string', content: '', ttlHours: '24', oneTimeAccess: false, enableMFA: false })
       } else {
         throw new Error('Failed to create object')
       }
@@ -175,6 +179,7 @@ export default function CreatePage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="string">String - Returns text content</option>
+                <option value="boolean">Boolean - Returns fixed true/false value</option>
                 <option value="toggle">Toggle - Flips true/false on each access</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
@@ -225,18 +230,49 @@ export default function CreatePage() {
                 required
                 className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
+                <option value="0.0167">1 minute</option>
+                <option value="0.0833">5 minutes</option>
                 <option value="1">1 hour</option>
                 <option value="6">6 hours</option>
-                <option value="12">12 hours</option>
-                <option value="24">24 hours</option>
-                <option value="72">3 days</option>
-                <option value="168">1 week</option>
-                <option value="720">1 month</option>
+                <option value="24">1 day</option>
+                <option value="168">7 days</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
                 The object will automatically expire after this time
               </p>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="oneTimeAccess"
+                  name="oneTimeAccess"
+                  checked={formData.oneTimeAccess}
+                  onChange={(e) => setFormData(prev => ({ ...prev, oneTimeAccess: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="oneTimeAccess" className="ml-2 block text-sm text-gray-700">
+                  One-time access
+                </label>
+              </div>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="enableMFA"
+                  name="enableMFA"
+                  checked={formData.enableMFA}
+                  onChange={(e) => setFormData(prev => ({ ...prev, enableMFA: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="enableMFA" className="ml-2 block text-sm text-gray-700">
+                  Enable TOTP MFA
+                </label>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
+              One-time access deletes the object after first access. MFA requires TOTP verification to view content.
+            </p>
 
             <button
               type="submit"
