@@ -1,16 +1,13 @@
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { getStats } from '../lib/api-storage'
 
 export default function HomePage() {
-  const stats = getStats()
-
   return (
     <Layout title="Welcome to Trufo">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <p className="text-xl text-gray-600 mb-8">
-            A simple, token-based object storage system with TTL management
+            A secure, encrypted object storage system with TTL management and MFA protection
           </p>
 
           <div className="mb-8 p-6 bg-red-50 border border-red-200 rounded-lg max-w-3xl mx-auto">
@@ -20,18 +17,7 @@ export default function HomePage() {
               <p>• Never store secrets, passwords, API keys, or any sensitive information</p>
               <p>• Site reliability is not promised - data may be lost at any time</p>
               <p>• Use only for temporary, non-critical data</p>
-              <p>• Data is stored locally in your browser and may be cleared</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-6 max-w-md mx-auto">
-            <div className="bg-white rounded-lg shadow p-4">
-              <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
-              <div className="text-sm text-gray-600">Objects Created</div>
-            </div>
-            <div className="bg-white rounded-lg shadow p-4">
-              <div className="text-2xl font-bold text-purple-600">{stats.totalHits}</div>
-              <div className="text-sm text-gray-600">Total Visits</div>
+              <p>• Data is encrypted but treat as potentially insecure</p>
             </div>
           </div>
         </div>
@@ -40,8 +26,8 @@ export default function HomePage() {
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Create Objects</h2>
             <p className="text-gray-600 mb-6">
-              Create string or toggle objects with secure token access. Toggle objects
-              flip their boolean value each time they're accessed.
+              Create string, boolean, or toggle objects with encrypted storage, optional TOTP MFA,
+              and configurable TTL. Support for one-time access objects.
             </p>
             <Link
               to="/create"
@@ -75,7 +61,7 @@ export default function HomePage() {
               </div>
               <h3 className="text-lg font-semibold mb-2">Create Object</h3>
               <p className="text-gray-600">
-                Choose string or toggle type, set content and TTL for automatic expiration.
+                Choose string, boolean, or toggle type. Set content, TTL, and optional MFA protection.
               </p>
             </div>
             <div className="text-center">
@@ -93,7 +79,7 @@ export default function HomePage() {
               </div>
               <h3 className="text-lg font-semibold mb-2">Access Content</h3>
               <p className="text-gray-600">
-                Use the access URL with your token. Toggle objects flip value on each access.
+                Use the access URL with token and optional TOTP code. Content is automatically decrypted.
               </p>
             </div>
           </div>
@@ -106,11 +92,14 @@ export default function HomePage() {
           </p>
           <div className="bg-gray-900 rounded-lg p-4 font-mono text-sm text-gray-100 overflow-x-auto">
             <div className="mb-2">
-              <span className="text-green-400">GET</span> /access/[object-name]?token=[your-token]
+              <span className="text-green-400">GET</span> /access/[object-name]?token=[your-token]&amp;totpCode=[123456]
+            </div>
+            <div className="mb-2">
+              <span className="text-yellow-400">POST</span> /api/toggle (for boolean objects)
             </div>
           </div>
           <p className="text-xs text-gray-500 mt-4 text-center">
-            Toggle objects will flip their boolean value (true ↔ false) with each access.
+            TOTP code optional for MFA-enabled objects. Toggle objects flip boolean values. Boolean objects can be toggled via API.
           </p>
         </div>
       </div>
