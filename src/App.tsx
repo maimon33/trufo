@@ -3,7 +3,6 @@ import { AuthProvider } from './components/AuthProvider'
 import HomePage from './pages/HomePage'
 import CreatePage from './pages/CreatePage'
 import ManagePage from './pages/ManagePage'
-import AdminPage from './pages/AdminPage'
 import AccessPage from './pages/AccessPage'
 import ApiAccess from './pages/ApiAccess.tsx'
 
@@ -15,7 +14,6 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/create" element={<CreatePage />} />
           <Route path="/manage" element={<ManagePage />} />
-          <Route path="/admin" element={<AdminPage />} />
           <Route path="/access/:name" element={<AccessPage />} />
           <Route path="/api/:name" element={<ApiAccess />} />
           <Route path="*" element={<Navigate to="/" replace />} />
