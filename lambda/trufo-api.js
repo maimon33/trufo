@@ -12,10 +12,20 @@ const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'trufo-objects';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production-32b';
 const ALGORITHM = 'aes-256-cbc';
 
+// Ensure encryption key is proper length for AES-256
+function getEncryptionKey() {
+  const key = Buffer.from(ENCRYPTION_KEY, 'utf8');
+  if (key.length === 32) return key;
+  // Pad or truncate to 32 bytes
+  const paddedKey = Buffer.alloc(32);
+  key.copy(paddedKey, 0, 0, Math.min(key.length, 32));
+  return paddedKey;
+}
+
 // Encrypt content
 function encryptContent(text) {
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipher(ALGORITHM, ENCRYPTION_KEY);
+  const cipher = crypto.createCipheriv(ALGORITHM, getEncryptionKey(), iv);
   let encrypted = cipher.update(JSON.stringify(text), 'utf8', 'hex');
   encrypted += cipher.final('hex');
   return `${iv.toString('hex')}:${encrypted}`;
@@ -30,7 +40,7 @@ function decryptContent(encryptedText) {
       return JSON.parse(encryptedText);
     }
     const iv = Buffer.from(ivHex, 'hex');
-    const decipher = crypto.createDecipher(ALGORITHM, ENCRYPTION_KEY);
+    const decipher = crypto.createDecipheriv(ALGORITHM, getEncryptionKey(), iv);
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return JSON.parse(decrypted);
@@ -94,13 +104,13 @@ exports.handler = async (event) => {
     return response(200, { message: 'OK' });
   }
 
-  // Check Origin header to block direct API access
-  const origin = event.headers?.origin || event.headers?.Origin;
-  const allowedOrigins = ['https://trufo.maimons.org', 'http://localhost:5173', 'http://localhost:3000'];
+  // Block ALL direct Lambda access - only allow CloudFront with secret header
+  const CF_SECRET = process.env.CLOUDFRONT_SECRET || 'trufo-cf-secret-2025-secure-key-32ch';
+  const cfSecretHeader = event.headers?.['x-cf-secret'] || event.headers?.['X-CF-Secret'];
 
-  if (!origin || !allowedOrigins.includes(origin)) {
-    console.log('Blocked request from origin:', origin);
-    return response(403, { error: 'Access denied: Invalid origin' });
+  if (cfSecretHeader !== CF_SECRET) {
+    console.log('Blocked direct Lambda access - missing or invalid CloudFront secret');
+    return response(403, { error: 'Direct access forbidden - use CloudFront only' });
   }
 
   // Function URL vs API Gateway event compatibility
