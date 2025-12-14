@@ -132,6 +132,11 @@ exports.handler = async (event) => {
         const { name, token, totpCode } = event.queryStringParameters || {};
         return await getObject(name, token, totpCode);
 
+      // Get object by token only
+      case 'GET /object':
+        const { token: objToken, totpCode: objTotpCode } = event.queryStringParameters || {};
+        return await getObjectByToken(objToken, objTotpCode);
+
       // Get user's objects
       case 'GET /user-objects':
         const { email } = event.queryStringParameters || {};
@@ -174,7 +179,7 @@ async function createObject(data) {
 
   // Generate missing fields
   const id = `obj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  const token = Math.random().toString(36).substr(2, 12);
+  const token = crypto.randomBytes(16).toString('hex'); // 32-character hex token
   const ttl = Date.now() + (parseFloat(ttlHours) * 60 * 60 * 1000); // Convert hours to milliseconds
 
   // Encrypt content for security
@@ -318,6 +323,112 @@ async function getObject(name, token, totpCode) {
     hits: object.hitCount + 1
   };
 
+
+  return response(200, responseData);
+}
+
+// Get object by token only (simpler access)
+async function getObjectByToken(token, totpCode) {
+  if (!token) {
+    return response(400, { error: 'Token is required' });
+  }
+
+  // Query by token (use scan since we don't have a token index)
+  const command = new ScanCommand({
+    TableName: TABLE_NAME,
+    FilterExpression: '#token = :token',
+    ExpressionAttributeNames: { '#token': 'token' },
+    ExpressionAttributeValues: { ':token': token }
+  });
+
+  const result = await docClient.send(command);
+  const object = result.Items && result.Items[0];
+
+  if (!object) {
+    return response(404, { error: 'Object not found or invalid token' });
+  }
+
+  // Check if expired - DELETE expired objects
+  if (object.ttl <= Date.now()) {
+    const deleteCommand = new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: { id: object.id }
+    });
+    await docClient.send(deleteCommand);
+    return response(410, { error: 'Object has expired and has been deleted' });
+  }
+
+  // Check TOTP MFA if enabled
+  if (object.totpSecret) {
+    if (!totpCode) {
+      return response(403, {
+        error: 'TOTP verification required',
+        requiresTOTP: true,
+        totpQR: object.hitCount === 0 ? `otpauth://totp/Trufo:${object.name}?secret=${object.totpSecret}&issuer=Trufo` : undefined
+      });
+    }
+
+    if (!verifyTOTPToken(object.totpSecret, totpCode)) {
+      return response(403, { error: 'Invalid TOTP code' });
+    }
+  }
+
+  // Update hit count
+  const updateCommand = new PutCommand({
+    TableName: TABLE_NAME,
+    Item: {
+      ...object,
+      hitCount: object.hitCount + 1,
+      lastHit: Date.now()
+    }
+  });
+  await docClient.send(updateCommand);
+
+  // Decrypt content
+  const decryptedContent = decryptContent(object.content);
+
+  // Handle one-time access - DELETE after reading
+  if (object.oneTimeAccess) {
+    const deleteCommand = new DeleteCommand({
+      TableName: TABLE_NAME,
+      Key: { id: object.id }
+    });
+    await docClient.send(deleteCommand);
+  }
+
+  // Return content based on type
+  let responseContent;
+  if (object.type === 'toggle') {
+    responseContent = decryptedContent; // Return current value first
+
+    // Only toggle if not one-time access (since object is deleted)
+    if (!object.oneTimeAccess) {
+      // Update the object with toggled content AFTER reading
+      const toggledContent = !decryptedContent;
+      const encryptedToggled = encryptContent(toggledContent);
+
+      const toggleUpdateCommand = new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          ...object,
+          content: encryptedToggled, // Store encrypted toggled value
+          hitCount: object.hitCount + 1,
+          lastHit: Date.now()
+        }
+      });
+      await docClient.send(toggleUpdateCommand);
+    }
+  } else {
+    // For 'string' and 'boolean' types, just return the content
+    responseContent = decryptedContent;
+  }
+
+  const responseData = {
+    name: object.name,
+    type: object.type,
+    content: responseContent,
+    hits: object.hitCount + 1
+  };
 
   return response(200, responseData);
 }

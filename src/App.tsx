@@ -15,6 +15,7 @@ function App() {
           <Route path="/create" element={<CreatePage />} />
           <Route path="/manage" element={<ManagePage />} />
           <Route path="/access/:name" element={<AccessPage />} />
+          <Route path="/object/:token" element={<AccessPage />} />
           <Route path="/api/:name" element={<ApiAccess />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

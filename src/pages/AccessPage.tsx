@@ -1,36 +1,45 @@
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout'
-import { accessObject } from '../lib/api-storage'
+import { accessObject, accessObjectByToken } from '../lib/api-storage'
 import { TrufoObject } from '../types'
 
 export default function AccessPage() {
-  const { name } = useParams<{ name: string }>()
+  const { name, token: urlToken } = useParams<{ name?: string; token?: string }>()
   const [searchParams] = useSearchParams()
-  const token = searchParams.get('token')
+  const queryToken = searchParams.get('token')
+  const token = urlToken || queryToken // Use URL token if available, otherwise query token
 
   const [object, setObject] = useState<TrufoObject | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!name || !token) {
-      setError('Missing object name or token')
+    if (!token) {
+      setError('Missing access token')
       setLoading(false)
       return
     }
 
     const fetchObject = async () => {
       try {
-        const result = await accessObject(name, token)
+        let result
+        if (name) {
+          // Legacy name+token access
+          result = await accessObject(name, token)
+        } else {
+          // New token-only access
+          result = await accessObjectByToken(token)
+        }
+
         if (!result) {
           setError('Object not found or expired')
         } else {
-          // Create a mock object for display (we only get content and hits from API)
+          // Create object for display
           const obj: TrufoObject = {
-            id: name,
-            name,
-            type: 'string', // We don't know the type from access, assume string
+            id: result.name || token,
+            name: result.name || 'Unnamed',
+            type: result.type as any || 'string',
             content: result.content,
             token,
             ttl: Date.now() + 86400000, // Mock TTL

@@ -32,6 +32,8 @@ interface ApiResponse<T = any> {
   message?: string
   requiresTOTP?: boolean
   totpQR?: string
+  name?: string
+  type?: string
 }
 
 /**
@@ -91,6 +93,50 @@ export async function createObject(object: any): Promise<ApiResponse | null> {
     return response
   } catch (error) {
     console.error('Failed to create object:', error)
+    return null
+  }
+}
+
+/**
+ * Access an object by token only (simpler access)
+ *
+ * @param token - The access token
+ * @param totpCode - Optional TOTP code for MFA-enabled objects
+ * @returns Promise resolving to object data, or null on failure
+ */
+export async function accessObjectByToken(token: string, totpCode?: string): Promise<{ name: string; type: string; content: any; hits: number; requiresTOTP?: boolean; totpQR?: string } | null> {
+  try {
+    const url = `/object?token=${encodeURIComponent(token)}${totpCode ? `&totpCode=${encodeURIComponent(totpCode)}` : ''}`
+    const response = await apiRequest<ApiResponse>(url)
+    return {
+      name: response.name || '',
+      type: response.type || 'string',
+      content: response.content,
+      hits: response.hits || 0,
+      requiresTOTP: response.requiresTOTP,
+      totpQR: response.totpQR
+    }
+  } catch (error: any) {
+    // Check if error contains TOTP requirement info
+    if (error.message.includes('TOTP verification required')) {
+      try {
+        const url = `/object?token=${encodeURIComponent(token)}`
+        const response = await fetch(`${import.meta.env.VITE_LAMBDA_API_URL || 'https://your-function-url.lambda-url.region.on.aws'}${url}`)
+        const errorData = await response.json()
+        return {
+          name: '',
+          type: 'string',
+          content: null,
+          hits: 0,
+          requiresTOTP: errorData.requiresTOTP,
+          totpQR: errorData.totpQR
+        }
+      } catch {
+        console.error('Failed to access object by token:', error)
+        return null
+      }
+    }
+    console.error('Failed to access object by token:', error)
     return null
   }
 }

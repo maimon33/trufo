@@ -83,8 +83,12 @@ export default function CreatePage() {
     navigator.clipboard.writeText(text)
   }
 
-  const generateAccessUrl = (name: string, token: string) => {
-    return `${window.location.origin}/access/${encodeURIComponent(name)}?token=${token}`
+  const generateAccessUrl = (token: string) => {
+    return `${window.location.origin}/object/${token}`
+  }
+
+  const generateApiUrl = (token: string) => {
+    return `${import.meta.env.VITE_LAMBDA_API_URL || 'https://your-api-url.com'}/object?token=${token}`
   }
 
   if (!user) {
@@ -129,14 +133,28 @@ export default function CreatePage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Access URL:</label>
+                <label className="block text-sm font-medium text-gray-700">Web Access URL:</label>
                 <div className="flex items-center space-x-2">
                   <p className="text-gray-900 font-mono text-sm flex-1 truncate">
-                    {generateAccessUrl(result.name, result.token)}
+                    {generateAccessUrl(result.token)}
                   </p>
                   <button
-                    onClick={() => copyToClipboard(generateAccessUrl(result.name, result.token))}
+                    onClick={() => copyToClipboard(generateAccessUrl(result.token))}
                     className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">API Endpoint:</label>
+                <div className="flex items-center space-x-2">
+                  <p className="text-gray-900 font-mono text-sm flex-1 truncate">
+                    {generateApiUrl(result.token)}
+                  </p>
+                  <button
+                    onClick={() => copyToClipboard(generateApiUrl(result.token))}
+                    className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
                   >
                     Copy
                   </button>
@@ -146,10 +164,21 @@ export default function CreatePage() {
                 <label className="block text-sm font-medium text-gray-700">Expires At:</label>
                 <p className="text-gray-900">{new Date(result.ttl).toLocaleString()}</p>
               </div>
+              {result.type === 'boolean' && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+                  <p className="text-blue-800 text-sm mb-2">
+                    <strong>Boolean Object:</strong> This object stores a boolean value. You can toggle it using the API:
+                  </p>
+                  <div className="bg-gray-800 text-gray-100 p-2 rounded font-mono text-xs">
+                    POST {import.meta.env.VITE_LAMBDA_API_URL}/toggle<br/>
+                    Body: {JSON.stringify({ name: result.name, token: result.token })}
+                  </div>
+                </div>
+              )}
               {result.type === 'toggle' && (
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded">
                   <p className="text-yellow-800 text-sm">
-                    <strong>Toggle Object:</strong> This object will flip between true/false each time it's accessed.
+                    <strong>Toggle Object:</strong> This object will flip between true/false each time it's accessed via GET.
                   </p>
                 </div>
               )}
