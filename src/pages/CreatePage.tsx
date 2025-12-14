@@ -37,14 +37,13 @@ export default function CreatePage() {
         content: formData.type === 'toggle' || formData.type === 'boolean'
           ? formData.content === 'true'
           : formData.content,
-        ttlHours: parseInt(formData.ttlHours),
+        ttlHours: parseFloat(formData.ttlHours),
         oneTimeAccess: formData.oneTimeAccess,
         enableMFA: formData.enableMFA,
         ownerEmail: user!.email,
         ownerName: user!.name
       }
 
-      console.log('Sending create data:', createData)
       const result = await createObject(createData)
       if (result && result.object) {
         setResult(result.object)

@@ -9,27 +9,28 @@ const docClient = DynamoDBDocumentClient.from(client);
 const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'trufo-objects';
 
 // Encryption key (in production, use AWS KMS or environment variable)
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32);
-const ALGORITHM = 'aes-256-gcm';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production-32b';
+const ALGORITHM = 'aes-256-cbc';
 
 // Encrypt content
 function encryptContent(text) {
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipherGCM(ALGORITHM, ENCRYPTION_KEY, iv);
+  const cipher = crypto.createCipher(ALGORITHM, ENCRYPTION_KEY);
   let encrypted = cipher.update(JSON.stringify(text), 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  const authTag = cipher.getAuthTag();
-  return `${iv.toString('hex')}:${encrypted}:${authTag.toString('hex')}`;
+  return `${iv.toString('hex')}:${encrypted}`;
 }
 
 // Decrypt content
 function decryptContent(encryptedText) {
   try {
-    const [ivHex, encrypted, authTagHex] = encryptedText.split(':');
+    const [ivHex, encrypted] = encryptedText.split(':');
+    if (!ivHex || !encrypted) {
+      // Handle backwards compatibility for non-encrypted data
+      return JSON.parse(encryptedText);
+    }
     const iv = Buffer.from(ivHex, 'hex');
-    const authTag = Buffer.from(authTagHex, 'hex');
-    const decipher = crypto.createDecipherGCM(ALGORITHM, ENCRYPTION_KEY, iv);
-    decipher.setAuthTag(authTag);
+    const decipher = crypto.createDecipher(ALGORITHM, ENCRYPTION_KEY);
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
     return JSON.parse(decrypted);
@@ -168,15 +169,6 @@ async function createObject(data) {
   const { name, type, content, ttlHours, ownerEmail, ownerName, oneTimeAccess, enableMFA } = data;
 
   if (!name || !type || content === undefined || content === null || ttlHours === undefined || ttlHours === null) {
-    console.log('Validation failed:', {
-      name,
-      type,
-      content,
-      ttlHours,
-      contentType: typeof content,
-      ttlHoursType: typeof ttlHours,
-      allData: data
-    });
     return response(400, { error: 'Missing required fields: name, type, content, ttlHours' });
   }
 
