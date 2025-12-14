@@ -8,6 +8,7 @@ export default function AccessPage() {
   const { name, token: urlToken } = useParams<{ name?: string; token?: string }>()
   const [searchParams] = useSearchParams()
   const queryToken = searchParams.get('token')
+  const secret = searchParams.get('secret')
   const token = urlToken || queryToken // Use URL token if available, otherwise query token
 
   const [object, setObject] = useState<TrufoObject | null>(null)
@@ -15,8 +16,8 @@ export default function AccessPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!token) {
-      setError('Missing access token')
+    if (!token || !secret) {
+      setError('Missing access token or secret')
       setLoading(false)
       return
     }
@@ -25,11 +26,11 @@ export default function AccessPage() {
       try {
         let result
         if (name) {
-          // Legacy name+token access
-          result = await accessObject(name, token)
+          // Legacy name+token access (now with secret)
+          result = await accessObject(name, token, undefined, secret)
         } else {
-          // New token-only access
-          result = await accessObjectByToken(token)
+          // New token-only access (with secret)
+          result = await accessObjectByToken(token, undefined, secret)
         }
 
         if (!result) {

@@ -55,6 +55,11 @@ function generateTOTPSecret() {
   return crypto.randomBytes(20).toString('base32');
 }
 
+// Generate user secret from email (consistent hash)
+function generateUserSecret(email) {
+  return crypto.createHash('sha256').update(email.toLowerCase()).digest('hex');
+}
+
 // Verify TOTP token
 function verifyTOTPToken(secret, token) {
   if (!secret || !token) return false;
@@ -104,14 +109,7 @@ exports.handler = async (event) => {
     return response(200, { message: 'OK' });
   }
 
-  // Block ALL direct Lambda access - only allow CloudFront with secret header
-  const CF_SECRET = process.env.CLOUDFRONT_SECRET || 'trufo-cf-secret-2025-secure-key-32ch';
-  const cfSecretHeader = event.headers?.['x-cf-secret'] || event.headers?.['X-CF-Secret'];
-
-  if (cfSecretHeader !== CF_SECRET) {
-    console.log('Blocked direct Lambda access - missing or invalid CloudFront secret');
-    return response(403, { error: 'Direct access forbidden - use CloudFront only' });
-  }
+  // No global access restrictions - validation happens per endpoint
 
   // Function URL vs API Gateway event compatibility
   const method = event.requestContext?.http?.method || event.httpMethod;
@@ -139,13 +137,13 @@ exports.handler = async (event) => {
 
       // Get object by token and name
       case 'GET /objects':
-        const { name, token, totpCode } = event.queryStringParameters || {};
-        return await getObject(name, token, totpCode);
+        const { name, token, totpCode, secret } = event.queryStringParameters || {};
+        return await getObject(name, token, totpCode, secret);
 
       // Get object by token only
       case 'GET /object':
-        const { token: objToken, totpCode: objTotpCode } = event.queryStringParameters || {};
-        return await getObjectByToken(objToken, objTotpCode);
+        const { token: objToken, totpCode: objTotpCode, secret: objSecret } = event.queryStringParameters || {};
+        return await getObjectByToken(objToken, objTotpCode, objSecret);
 
       // Get user's objects
       case 'GET /user-objects':
@@ -221,7 +219,15 @@ async function createObject(data) {
 
     await docClient.send(command);
     console.log('Item inserted successfully');
-    return response(201, { success: true, object: item });
+
+    // Generate user secret and include in response
+    const userSecret = generateUserSecret(ownerEmail);
+
+    return response(201, {
+      success: true,
+      object: item,
+      userSecret: userSecret
+    });
   } catch (error) {
     console.error('Error inserting item to DynamoDB:', error);
     return response(500, { error: 'Failed to create object', details: error.message });
@@ -229,9 +235,9 @@ async function createObject(data) {
 }
 
 // Get object by name and token
-async function getObject(name, token, totpCode) {
-  if (!name || !token) {
-    return response(400, { error: 'Name and token are required' });
+async function getObject(name, token, totpCode, secret) {
+  if (!name || !token || !secret) {
+    return response(400, { error: 'Name, token, and secret are required' });
   }
 
   // Query by name (GSI) and filter by token
@@ -248,6 +254,12 @@ async function getObject(name, token, totpCode) {
 
   if (!object) {
     return response(404, { error: 'Object not found or invalid token' });
+  }
+
+  // Validate user secret matches object owner
+  const expectedSecret = generateUserSecret(object.ownerEmail);
+  if (secret !== expectedSecret) {
+    return response(403, { error: 'Invalid secret for this object' });
   }
 
   // Check if expired - DELETE expired objects
@@ -338,9 +350,9 @@ async function getObject(name, token, totpCode) {
 }
 
 // Get object by token only (simpler access)
-async function getObjectByToken(token, totpCode) {
-  if (!token) {
-    return response(400, { error: 'Token is required' });
+async function getObjectByToken(token, totpCode, secret) {
+  if (!token || !secret) {
+    return response(400, { error: 'Token and secret are required' });
   }
 
   // Query by token (use scan since we don't have a token index)
@@ -356,6 +368,12 @@ async function getObjectByToken(token, totpCode) {
 
   if (!object) {
     return response(404, { error: 'Object not found or invalid token' });
+  }
+
+  // Validate user secret matches object owner
+  const expectedSecret = generateUserSecret(object.ownerEmail);
+  if (secret !== expectedSecret) {
+    return response(403, { error: 'Invalid secret for this object' });
   }
 
   // Check if expired - DELETE expired objects

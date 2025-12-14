@@ -83,12 +83,12 @@ export default function CreatePage() {
     navigator.clipboard.writeText(text)
   }
 
-  const generateAccessUrl = (token: string) => {
-    return `${window.location.origin}/object/${token}`
+  const generateAccessUrl = (token: string, userSecret: string) => {
+    return `${window.location.origin}/object/${token}?secret=${userSecret}`
   }
 
-  const generateApiUrl = (token: string) => {
-    return `${import.meta.env.VITE_LAMBDA_API_URL || 'https://your-api-url.com'}/object?token=${token}`
+  const generateApiUrl = (token: string, userSecret: string) => {
+    return `${import.meta.env.VITE_LAMBDA_API_URL || 'https://your-api-url.com'}/object?token=${token}&secret=${userSecret}`
   }
 
   if (!user) {
@@ -133,13 +133,28 @@ export default function CreatePage() {
                 </div>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700">Your Access Secret:</label>
+                <div className="flex items-center space-x-2">
+                  <p className="text-gray-900 font-mono text-sm flex-1 truncate">{(result as any).userSecret}</p>
+                  <button
+                    onClick={() => copyToClipboard((result as any).userSecret)}
+                    className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  This secret is the same for all your objects. Keep it secure!
+                </p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700">Web Access URL:</label>
                 <div className="flex items-center space-x-2">
                   <p className="text-gray-900 font-mono text-sm flex-1 truncate">
-                    {generateAccessUrl(result.token)}
+                    {generateAccessUrl(result.token, (result as any).userSecret)}
                   </p>
                   <button
-                    onClick={() => copyToClipboard(generateAccessUrl(result.token))}
+                    onClick={() => copyToClipboard(generateAccessUrl(result.token, (result as any).userSecret))}
                     className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
                   >
                     Copy
@@ -150,10 +165,10 @@ export default function CreatePage() {
                 <label className="block text-sm font-medium text-gray-700">API Endpoint:</label>
                 <div className="flex items-center space-x-2">
                   <p className="text-gray-900 font-mono text-sm flex-1 truncate">
-                    {generateApiUrl(result.token)}
+                    {generateApiUrl(result.token, (result as any).userSecret)}
                   </p>
                   <button
-                    onClick={() => copyToClipboard(generateApiUrl(result.token))}
+                    onClick={() => copyToClipboard(generateApiUrl(result.token, (result as any).userSecret))}
                     className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
                   >
                     Copy

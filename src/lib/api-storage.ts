@@ -102,11 +102,12 @@ export async function createObject(object: any): Promise<ApiResponse | null> {
  *
  * @param token - The access token
  * @param totpCode - Optional TOTP code for MFA-enabled objects
+ * @param secret - User secret for access validation
  * @returns Promise resolving to object data, or null on failure
  */
-export async function accessObjectByToken(token: string, totpCode?: string): Promise<{ name: string; type: string; content: any; hits: number; requiresTOTP?: boolean; totpQR?: string } | null> {
+export async function accessObjectByToken(token: string, totpCode?: string, secret?: string): Promise<{ name: string; type: string; content: any; hits: number; requiresTOTP?: boolean; totpQR?: string } | null> {
   try {
-    const url = `/object?token=${encodeURIComponent(token)}${totpCode ? `&totpCode=${encodeURIComponent(totpCode)}` : ''}`
+    const url = `/object?token=${encodeURIComponent(token)}${secret ? `&secret=${encodeURIComponent(secret)}` : ''}${totpCode ? `&totpCode=${encodeURIComponent(totpCode)}` : ''}`
     const response = await apiRequest<ApiResponse>(url)
     return {
       name: response.name || '',
@@ -147,23 +148,12 @@ export async function accessObjectByToken(token: string, totpCode?: string): Pro
  * @param name - The object name
  * @param token - The access token
  * @param totpCode - Optional TOTP code for MFA-enabled objects
+ * @param secret - User secret for access validation
  * @returns Promise resolving to object content and metadata, or null on failure
- *
- * @example
- * // Access a regular object
- * const result = await accessObject('my-object', 'abc123')
- * console.log(result.content) // Object content
- * console.log(result.hits)    // Access count
- *
- * // Access an MFA-enabled object
- * const mfaResult = await accessObject('secure-object', 'def456', '123456')
- * if (mfaResult?.requiresTOTP) {
- *   console.log(mfaResult.totpQR) // QR code for first-time setup
- * }
  */
-export async function accessObject(name: string, token: string, totpCode?: string): Promise<{ content: any; hits: number; requiresTOTP?: boolean; totpQR?: string } | null> {
+export async function accessObject(name: string, token: string, totpCode?: string, secret?: string): Promise<{ content: any; hits: number; requiresTOTP?: boolean; totpQR?: string } | null> {
   try {
-    const url = `/objects?name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}${totpCode ? `&totpCode=${encodeURIComponent(totpCode)}` : ''}`
+    const url = `/objects?name=${encodeURIComponent(name)}&token=${encodeURIComponent(token)}${secret ? `&secret=${encodeURIComponent(secret)}` : ''}${totpCode ? `&totpCode=${encodeURIComponent(totpCode)}` : ''}`
     const response = await apiRequest<ApiResponse>(url)
     return {
       content: response.content,
