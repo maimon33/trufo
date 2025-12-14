@@ -26,6 +26,11 @@ export default function CreatePage() {
     setResult(null)
 
     try {
+      // Validate that boolean/toggle objects have a valid selection
+      if ((formData.type === 'boolean' || formData.type === 'toggle') && formData.content === '') {
+        throw new Error('Please select a boolean value (true or false)')
+      }
+
       const createData: CreateObjectData & { ownerEmail: string; ownerName: string } = {
         name: formData.name,
         type: formData.type,
@@ -55,10 +60,23 @@ export default function CreatePage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }))
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [name]: value
+      }
+
+      // When switching to boolean/toggle, set a default value if content is empty
+      if (name === 'type' && (value === 'boolean' || value === 'toggle') && prev.content === '') {
+        updated.content = 'true'
+      }
+      // When switching to string, clear content if it was a boolean value
+      if (name === 'type' && value === 'string' && (prev.content === 'true' || prev.content === 'false')) {
+        updated.content = ''
+      }
+
+      return updated
+    })
   }
 
   const copyToClipboard = (text: string) => {
@@ -211,7 +229,6 @@ export default function CreatePage() {
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="">Select initial value</option>
                   <option value="true">True</option>
                   <option value="false">False</option>
                 </select>
