@@ -46,7 +46,12 @@ export default function CreatePage() {
 
       const result = await createObject(createData)
       if (result && result.object) {
-        setResult(result.object)
+        // Include userSecret from the response root level
+        const resultWithSecret = {
+          ...result.object,
+          userSecret: result.userSecret
+        }
+        setResult(resultWithSecret)
         setFormData({ name: '', type: 'string', content: '', ttlHours: '24', oneTimeAccess: false, enableMFA: false })
       } else {
         throw new Error('Failed to create object')
@@ -135,9 +140,9 @@ export default function CreatePage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Your Access Secret:</label>
                 <div className="flex items-center space-x-2">
-                  <p className="text-gray-900 font-mono text-sm flex-1 truncate">{(result as any).userSecret}</p>
+                  <p className="text-gray-900 font-mono text-sm flex-1 truncate">{result.userSecret}</p>
                   <button
-                    onClick={() => copyToClipboard((result as any).userSecret)}
+                    onClick={() => copyToClipboard(result.userSecret)}
                     className="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
                   >
                     Copy
@@ -151,10 +156,10 @@ export default function CreatePage() {
                 <label className="block text-sm font-medium text-gray-700">Web Access URL:</label>
                 <div className="flex items-center space-x-2">
                   <p className="text-gray-900 font-mono text-sm flex-1 truncate">
-                    {generateAccessUrl(result.token, (result as any).userSecret)}
+                    {generateAccessUrl(result.token, result.userSecret)}
                   </p>
                   <button
-                    onClick={() => copyToClipboard(generateAccessUrl(result.token, (result as any).userSecret))}
+                    onClick={() => copyToClipboard(generateAccessUrl(result.token, result.userSecret))}
                     className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
                   >
                     Copy
@@ -165,10 +170,10 @@ export default function CreatePage() {
                 <label className="block text-sm font-medium text-gray-700">Access URL for API/Scripts:</label>
                 <div className="flex items-center space-x-2">
                   <p className="text-gray-900 font-mono text-sm flex-1 truncate">
-                    {generateApiUrl(result.token, (result as any).userSecret)}
+                    {generateApiUrl(result.token, result.userSecret)}
                   </p>
                   <button
-                    onClick={() => copyToClipboard(generateApiUrl(result.token, (result as any).userSecret))}
+                    onClick={() => copyToClipboard(generateApiUrl(result.token, result.userSecret))}
                     className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
                   >
                     Copy
@@ -181,13 +186,9 @@ export default function CreatePage() {
               </div>
               {result.type === 'boolean' && (
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded">
-                  <p className="text-blue-800 text-sm mb-2">
-                    <strong>Boolean Object:</strong> This object stores a boolean value. You can toggle it using the API:
+                  <p className="text-blue-800 text-sm">
+                    <strong>Boolean Object:</strong> This object stores a fixed boolean value that can be retrieved via the access URL above.
                   </p>
-                  <div className="bg-gray-800 text-gray-100 p-2 rounded font-mono text-xs">
-                    POST {import.meta.env.VITE_LAMBDA_API_URL}/toggle<br/>
-                    Body: {JSON.stringify({ name: result.name, token: result.token })}
-                  </div>
                 </div>
               )}
               {result.type === 'toggle' && (
