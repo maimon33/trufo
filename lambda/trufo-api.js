@@ -167,7 +167,16 @@ async function createObject(data) {
 
   const { name, type, content, ttlHours, ownerEmail, ownerName, oneTimeAccess, enableMFA } = data;
 
-  if (!name || !type || content === undefined || !ttlHours) {
+  if (!name || !type || content === undefined || content === null || ttlHours === undefined || ttlHours === null) {
+    console.log('Validation failed:', {
+      name,
+      type,
+      content,
+      ttlHours,
+      contentType: typeof content,
+      ttlHoursType: typeof ttlHours,
+      allData: data
+    });
     return response(400, { error: 'Missing required fields: name, type, content, ttlHours' });
   }
 

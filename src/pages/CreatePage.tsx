@@ -44,6 +44,7 @@ export default function CreatePage() {
         ownerName: user!.name
       }
 
+      console.log('Sending create data:', createData)
       const result = await createObject(createData)
       if (result && result.object) {
         setResult(result.object)
