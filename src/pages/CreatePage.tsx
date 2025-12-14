@@ -88,7 +88,7 @@ export default function CreatePage() {
   }
 
   const generateApiUrl = (token: string, userSecret: string) => {
-    return `${import.meta.env.VITE_LAMBDA_API_URL || 'https://your-api-url.com'}/object?token=${token}&secret=${userSecret}`
+    return `${window.location.origin}/object/${token}?secret=${userSecret}`
   }
 
   if (!user) {
@@ -162,7 +162,7 @@ export default function CreatePage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">API Endpoint:</label>
+                <label className="block text-sm font-medium text-gray-700">Access URL for API/Scripts:</label>
                 <div className="flex items-center space-x-2">
                   <p className="text-gray-900 font-mono text-sm flex-1 truncate">
                     {generateApiUrl(result.token, (result as any).userSecret)}

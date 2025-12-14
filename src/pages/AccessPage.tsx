@@ -60,7 +60,7 @@ export default function AccessPage() {
     }
 
     fetchObject()
-  }, [name, token])
+  }, [name, token, secret])
 
   if (loading) {
     return (
