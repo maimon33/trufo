@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Trufo Lambda + S3 Architecture
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: trufo-storage-bucket
+    Description: Name for the S3 bucket
+
+  FromEmail:
+    Type: String
+    Default: noreply@trufo.com
+    Description: From email address (required for SES)
+
+  DomainName:
+    Type: String
+    Default: ''
+    Description: Custom domain name (optional, e.g., trufo.example.com)
+
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Route53 Hosted Zone ID for the domain (leave empty if not using Route53)
+
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or username (e.g., maimon33)
+
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository name (e.g., trufo)
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
+  CreateRoute53Records: !And [!Condition HasDomain, !Condition HasHostedZone]
+
+Resources:
+  # GitHub OIDC Provider (if it doesn't exist)
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCIdentityProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  # GitHub Actions IAM Role
+  GitHubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-github-actions-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOIDCProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+              StringLike:
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOrg}/${GitHubRepo}:*'
+      Policies:
+        - PolicyName: DeploymentPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:*
+                  - lambda:*
+                  - iam:*
+                  - s3:*
+                  - ses:*
+                  - route53:*
+                  - logs:*
+                Resource: '*'
+
+  # S3 Bucket for object storage
+  TrufoStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # Lambda execution role
+  TrufoLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${TrufoStorageBucket}/*'
+                  - !GetAtt TrufoStorageBucket.Arn
+        - PolicyName: SESAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                  - ses:GetSendQuota
+                  - ses:GetSendStatistics
+                Resource: '*'
+
+  # Lambda function
+  TrufoLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 30
+      MemorySize: 512
+      Role: !GetAtt TrufoLambdaRole.Arn
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: !Ref TrufoStorageBucket
+          FROM_EMAIL: !Ref FromEmail
+          ENCRYPTION_KEY: !Sub '${AWS::StackName}-${AWS::AccountId}-key'
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowCredentials: false
+          AllowHeaders:
+            - Content-Type
+            - Authorization
+          AllowMethods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - OPTIONS
+          AllowOrigins:
+            - '*'
+
+  # Route53 Records for custom domain (conditional)
+  DomainRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateRoute53Records
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Select [2, !Split ['/', !GetAtt TrufoLambdaFunctionUrl.FunctionUrl]]
+
+  WWWDomainRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateRoute53Records
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'www.${DomainName}'
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Select [2, !Split ['/', !GetAtt TrufoLambdaFunctionUrl.FunctionUrl]]
+
+Outputs:
+  FunctionUrl:
+    Description: Lambda Function URL
+    Value: !GetAtt TrufoLambdaFunctionUrl.FunctionUrl
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionUrl'
+
+  BucketName:
+    Description: S3 Bucket Name
+    Value: !Ref TrufoStorageBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  WebsiteURL:
+    Description: Website URL
+    Value: !If
+      - HasDomain
+      - !Sub 'https://${DomainName}'
+      - !GetAtt TrufoLambdaFunctionUrl.FunctionUrl
+
+  GitHubActionsRoleArn:
+    Description: GitHub Actions IAM Role ARN
+    Value: !GetAtt GitHubActionsRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubActionsRole'
+
+  SESConfigurationRequired:
+    Description: SES Configuration Instructions
+    Value: !Sub |
+      To complete email setup:
+      1. Verify your email address in SES: aws ses verify-email-identity --email-address ${FromEmail}
+      2. If using a custom domain, verify the domain: aws ses verify-domain-identity --domain yourdomain.com
+      3. Request production access if needed: https://console.aws.amazon.com/ses/

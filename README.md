@@ -1,214 +1,307 @@
-# Trufo - Static Token-Based Object Storage
+# 🔒 Trufo - Secure Object Storage
 
-A secure, token-based object storage system with Google OAuth authentication, user isolation, and S3-based admin management.
+Trufo is a serverless secret storage service built with AWS Lambda and S3. Create and share temporary encrypted objects with email validation, TOTP 2FA, and automatic expiration.
 
-## Features
+## ✨ Features
 
-- **Token-Based Access**: Secure object access using unique tokens
-- **Google OAuth Authentication**: User sign-in with minimal permissions
-- **User Isolation**: Users can only see and manage their own objects
-- **Object Types**: String objects (return content) and Toggle objects (flip true/false on access)
-- **TTL Management**: Automatic expiration and cleanup of objects
-- **Analytics Tracking**: Hit count and access time tracking
-- **Admin Dashboard**: S3 token-based admin access to view all objects
-- **Static Deployment**: Runs entirely client-side with S3 + CloudFront
+- **🔐 Secure Storage**: Email validation and content encryption
+- **⏰ Auto-Expiration**: Objects automatically deleted after TTL
+- **🔑 TOTP 2FA**: Optional two-factor authentication
+- **🔄 Toggle Objects**: Boolean objects that flip on each access
+- **📱 One-Time Access**: Self-destructing objects
+- **🌐 Web Interface**: Built-in HTML interface (no build required)
+- **📧 Email Validation**: Amazon SES integration
+- **🏗️ Serverless**: AWS Lambda + S3 architecture
+- **💰 Cost Effective**: No DynamoDB charges
 
-## Getting Started
+## 🏗️ Architecture
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Lambda        │    │   S3 Bucket     │    │   Amazon        │
+│   Function      │◄──►│   Storage       │    │   SES           │
+│                 │    │                 │    │                 │
+│ • Web Interface │    │ • User Objects  │    │ • Email         │
+│ • API Endpoints │    │ • Token Index   │    │ • Validation    │
+│ • Auth System   │    │ • Encryption    │    │ • Delivery      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+## 🚀 Quick Deployment
 
 ### Prerequisites
+- AWS CLI configured with appropriate permissions
+- AWS SAM CLI installed
+- Python 3.9+
 
-- Node.js 18+
-- AWS S3 bucket (for data storage and admin token)
-- AWS CloudFront distribution (recommended for HTTPS and global CDN)
-- Google OAuth application (for user authentication)
+### 1. Deploy Infrastructure
 
-### Installation
+Choose your preferred deployment method:
 
-1. Clone the repository:
+#### Option A: AWS SAM (Recommended for beginners)
+
 ```bash
-git clone git@github.com:maimon33/trufo.git
+# Clone the repository
+git clone https://github.com/your-username/trufo.git
 cd trufo
+
+# Build and deploy
+sam build
+sam deploy --guided
 ```
 
-2. Install dependencies:
+#### Option B: Terraform (Recommended for infrastructure teams)
+
 ```bash
+# Clone the repository
+git clone https://github.com/your-username/trufo.git
+cd trufo/terraform
+
+# Initialize Terraform
+terraform init
+
+# Configure variables
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your settings
+
+# Deploy
+terraform plan
+terraform apply
+```
+
+### 2. Configure Parameters
+
+#### For AWS SAM:
+During `sam deploy --guided`, you'll be prompted for:
+
+- **FromEmail**: Email address for notifications (must verify in SES)
+- **DomainName**: Custom domain (optional, e.g., trufo.example.com)
+- **HostedZoneId**: Route53 hosted zone ID (optional)
+- **GitHubOrg**: Your GitHub username/organization
+- **GitHubRepo**: Repository name (for CI/CD)
+
+#### For Terraform:
+Edit `terraform/terraform.tfvars` with your configuration:
+
+```hcl
+from_email      = "noreply@yourdomain.com"  # Required
+domain_name     = "trufo.yourdomain.com"    # Optional
+hosted_zone_id  = "Z1D633PJN98FT9"          # Optional
+github_org      = "your-username"            # Optional
+github_repo     = "trufo"                   # Optional
+```
+
+### 3. Verify SES Email
+
+```bash
+# Verify your email address in Amazon SES
+aws ses verify-email-identity --email-address noreply@yourdomain.com
+
+# Check verification status
+aws ses get-identity-verification-attributes --identities noreply@yourdomain.com
+```
+
+### 4. Configure GitHub (Optional)
+
+For automatic deployments, set these GitHub repository variables:
+
+```
+AWS_ROLE_ARN      # From CloudFormation output
+FROM_EMAIL        # SES verified email
+DOMAIN_NAME       # Custom domain (optional)
+HOSTED_ZONE_ID    # Route53 zone ID (optional)
+```
+
+## 🌐 Usage
+
+### Web Interface
+
+After deployment, access your Trufo instance:
+
+- **Main Interface**: `https://your-function-url/`
+- **Create Objects**: `https://your-function-url/create`
+- **Manage Objects**: `https://your-function-url/manage`
+- **Access Objects**: `https://your-function-url/access/{token}`
+
+### API Endpoints
+
+```bash
+# Create an object
+curl -X POST https://your-function-url/api/objects \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-secret",
+    "type": "string",
+    "content": "Hello World!",
+    "ttlHours": 24,
+    "ownerEmail": "user@example.com",
+    "oneTimeAccess": false,
+    "enableMFA": false
+  }'
+
+# Access an object
+curl "https://your-function-url/api/objects?name=my-secret&token=abc123&secret=user-secret"
+
+# List user objects
+curl "https://your-function-url/api/user-objects?email=user@example.com"
+```
+
+## 📁 Project Structure
+
+```
+trufo/
+├── lambda_function.py     # Main Lambda handler
+├── templates.py           # HTML web interface
+├── requirements.txt       # Python dependencies
+├── cloudformation.yaml    # Infrastructure as Code (SAM)
+├── terraform/            # Infrastructure as Code (Terraform)
+│   ├── main.tf           # Main Terraform configuration
+│   ├── variables.tf      # Input variables
+│   ├── outputs.tf        # Output values
+│   ├── terraform.tfvars.example  # Example configuration
+│   └── README.md         # Terraform deployment guide
+├── .github/workflows/     # CI/CD automation
+│   ├── deploy.yml        # SAM deployment workflow
+│   └── terraform-deploy.yml  # Terraform deployment workflow
+├── README.md             # This file
+├── local-dev/            # React development environment
+│   ├── src/              # React components
+│   ├── package.json      # Node.js dependencies
+│   └── README.md         # Local development guide
+└── archive/              # Previous architectures
+    ├── lambda-dynamodb/  # Original DynamoDB version
+    └── lambda-s3-dev/    # Development version
+```
+
+## 🔧 Configuration
+
+### Custom Domain Setup
+
+#### With AWS SAM:
+1. **With Route53** (automatic):
+   ```bash
+   sam deploy --parameter-overrides \
+     DomainName="trufo.example.com" \
+     HostedZoneId="Z1D633PJN98FT9"
+   ```
+
+2. **External DNS** (manual):
+   - Get Function URL from CloudFormation outputs
+   - Create CNAME: `trufo.example.com` → `{function-url-domain}`
+
+#### With Terraform:
+1. **With Route53** (automatic):
+   ```hcl
+   domain_name     = "trufo.example.com"
+   hosted_zone_id  = "Z1D633PJN98FT9"
+   ```
+
+2. **External DNS** (manual):
+   - Get Function URL from Terraform outputs: `terraform output function_url`
+   - Create CNAME: `trufo.example.com` → `{function-url-domain}`
+
+### SES Production Access
+
+For production use, request SES production access:
+1. Visit [AWS SES Console](https://console.aws.amazon.com/ses/)
+2. Go to "Sending statistics" → "Request production access"
+3. Complete the form with your use case
+
+### Environment Variables
+
+Lambda automatically receives these environment variables:
+
+- `S3_BUCKET_NAME`: S3 bucket for object storage
+- `FROM_EMAIL`: SES verified sender email
+- `ENCRYPTION_KEY`: Auto-generated encryption key
+
+## 🛠️ Development
+
+### Local Development
+
+Use the React development environment:
+
+```bash
+cd local-dev
 npm install
-```
-
-3. Set up environment variables:
-```bash
-cp .env.example .env
-```
-
-Fill in the required environment variables:
-
-```env
-# Google OAuth Configuration
-VITE_GOOGLE_CLIENT_ID=your-google-oauth-client-id
-
-# S3 Configuration for Admin Token Access
-VITE_S3_BUCKET_URL=https://your-bucket.s3.amazonaws.com
-```
-
-4. Set up Google OAuth:
-
-   **Step 1: Create Google Cloud Project**
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Click "Select a project" → "New Project"
-   - Name your project (e.g., "Trufo Auth")
-   - Click "Create"
-
-   **Step 2: Configure OAuth Consent Screen**
-   - Go to "APIs & Services" → "OAuth consent screen"
-   - Choose "External" (unless you have Google Workspace)
-   - Fill required fields:
-     - App name: "Trufo"
-     - User support email: Your email
-     - Developer contact: Your email
-   - Click "Save and Continue"
-   - Skip scopes (default is fine)
-   - Add test users: Add your email address
-   - Click "Save and Continue"
-
-   **Step 3: Create OAuth Client ID**
-   - Go to "APIs & Services" → "Credentials"
-   - Click "Create Credentials" → "OAuth 2.0 Client IDs"
-   - Application type: "Web application"
-   - Name: "Trufo Web Client"
-   - **Authorized JavaScript origins**:
-     - For local dev: `http://localhost:3000`
-     - For production: `https://your-domain.com`
-   - **Authorized redirect URIs**:
-     - For local dev: `http://localhost:3000`
-     - For production: `https://your-domain.com`
-   - Click "Create"
-   - Copy the Client ID (looks like: `123456789-abc123.apps.googleusercontent.com`)
-
-5. Set up S3 Admin Token (optional):
-   - Create a file at `s3://your-bucket/admin/admin-token.txt`
-   - Put a long, random string as the admin token
-   - This enables admin access to view all objects
-
-6. **Development Admin Access**:
-   - For local development, use admin token: `root`
-   - This bypasses S3 token verification in dev mode
-
-7. Start the development server:
-```bash
 npm run dev
 ```
 
-## Usage
+### Testing Lambda Locally
 
-### For Users
+#### With AWS SAM:
+```bash
+# Start local API
+sam local start-api
 
-1. **Sign In**: Use Google OAuth to sign in (requires minimal permissions)
-2. **Create Objects**: Visit `/create` to create string or toggle objects with TTL
-3. **Manage Objects**: Visit `/manage` to view and edit your objects
-4. **Access Objects**: Use the access URL with your token:
-   ```
-   GET /access/[object-name]?token=[your-token]
-   ```
-
-### For Admins
-
-1. **Admin Access**: Visit `/admin` and enter the admin token from S3
-2. **View All Objects**: See objects from all users with owner information
-3. **Manage Any Object**: Edit or delete objects from any user
-4. **Analytics**: View system-wide hit counts and usage patterns
-
-## Required GitHub Secrets
-
-For automated deployment, configure these secrets in your GitHub repository:
-
-**AWS Deployment:**
-- `AWS_ACCESS_KEY_ID` - AWS access key
-- `AWS_SECRET_ACCESS_KEY` - AWS secret key
-- `AWS_REGION` - AWS region (e.g., us-east-1)
-- `S3_BUCKET` - S3 bucket name
-- `CLOUDFRONT_DISTRIBUTION_ID` - CloudFront distribution ID (optional)
-
-**Application Configuration:**
-- `VITE_GOOGLE_CLIENT_ID` - Google OAuth client ID
-- `VITE_S3_BUCKET_URL` - S3 bucket URL for data access
-
-## API Endpoints
-
-### Object Access
-- `GET /access/[name]?token=[token]` - Access object by name and token
-
-### Admin Routes
-- `/admin` - Admin dashboard (requires admin token)
-- `/create` - Create new objects (requires Google sign-in)
-- `/manage` - Manage user's objects (requires Google sign-in)
-
-## Deployment Options
-
-### Option 1: S3 + CloudFront (Recommended)
-
-**Pros:**
-- ✅ Global CDN with fast loading
-- ✅ Free HTTPS with AWS Certificate Manager
-- ✅ Custom domain support
-- ✅ Integrated with AWS ecosystem
-- ✅ Cost-effective for high traffic
-
-**Setup:**
-1. Create S3 bucket for storage
-2. Create CloudFront distribution pointing to S3
-3. Configure custom domain with Route 53
-4. Deploy using GitHub Actions
-
-### Option 2: Netlify
-
-**Pros:**
-- ✅ Simple setup and deployment
-- ✅ Free HTTPS and custom domains
-- ✅ Excellent SPA routing support
-- ✅ Built-in CI/CD from GitHub
-- ✅ Free tier for low traffic
-
-**Setup:**
-1. Connect GitHub repo to Netlify
-2. Configure environment variables
-3. Deploy automatically on push
-
-## Architecture
-
-- **Frontend**: React with TypeScript, Vite, and Tailwind CSS
-- **Database**: JSON storage in S3 (client-side)
-- **Authentication**: Google OAuth with Identity Services
-- **Hosting**: S3 + CloudFront or Netlify
-- **Admin Access**: S3-based token authentication
-
-## Development
-
-### Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build locally
-- `npm run lint` - Run ESLint (if configured)
-
-### Project Structure
-
-```
-src/
-├── components/          # Reusable React components
-├── lib/                # Utility libraries (auth, storage, admin)
-├── pages/              # Application pages/routes
-├── types/              # TypeScript type definitions
-└── main.tsx            # Application entry point
+# Test specific function
+sam local invoke TrufoLambdaFunction --event events/test-event.json
 ```
 
-## Security Features
+#### With Terraform:
+```bash
+# Create a test Lambda package
+cd terraform
+terraform apply  # This creates lambda_function.zip
 
-- Google OAuth authentication for admin access
-- Unique token generation for object access
-- TTL-based automatic expiration
-- Admin-only access to sensitive operations
-- Secure S3 integration
+# Use AWS CLI to test
+aws lambda invoke --function-name $(terraform output -raw lambda_function_name) \
+  --payload '{"httpMethod":"GET","path":"/"}' \
+  response.json
+```
 
-## License
+## 📊 Storage Structure
 
-This project is licensed under the MIT License.# trufo
+Objects are stored in S3 with this structure:
+
+```
+s3://bucket-name/
+├── users/
+│   ├── {email-hash}/
+│   │   ├── strings/{name}.json
+│   │   ├── booleans/{name}.json
+│   │   └── toggles/{name}.json
+└── tokens/
+    └── {token}.json → reference to actual object
+```
+
+## 🔐 Security Features
+
+- **Email Verification**: Required for object creation
+- **Content Encryption**: All objects encrypted at rest
+- **User Secrets**: Generated from email for access control
+- **TOTP MFA**: Optional 2FA using authenticator apps
+- **TTL Expiration**: Automatic cleanup of expired objects
+- **One-Time Access**: Objects deleted after single read
+- **HTTPS Only**: All communication encrypted in transit
+
+## 💰 Cost Optimization
+
+This architecture is optimized for cost:
+
+- **No DynamoDB**: Only S3 storage costs (~$0.023/GB/month)
+- **Lambda Efficiency**: Pay-per-request pricing
+- **No CloudFront**: Direct Function URL access
+- **Automatic Cleanup**: Expired objects removed automatically
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- **Issues**: [GitHub Issues](https://github.com/your-username/trufo/issues)
+- **Documentation**: This README and inline code comments
+- **AWS Support**: [AWS Documentation](https://docs.aws.amazon.com/)
+
+---
+
+Made with ❤️ using AWS Lambda + S3

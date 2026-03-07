@@ -1,0 +1,29 @@
+# Terraform Configuration Example
+# Copy this file to terraform.tfvars and customize for your deployment
+
+# Basic Configuration
+aws_region   = "us-east-1"
+project_name = "trufo"
+environment  = "prod"
+
+# Email Configuration (Required)
+from_email = "noreply@yourdomain.com"
+
+# Custom Domain (Optional)
+domain_name     = "trufo.yourdomain.com"
+hosted_zone_id  = "Z1D633PJN98FT9"
+
+# GitHub Integration (Optional)
+github_org  = "your-github-username"
+github_repo = "trufo"
+
+# Advanced Configuration
+s3_bucket_name       = ""  # Leave empty for auto-generated name
+create_github_oidc   = true
+log_retention_days   = 14
+lambda_timeout       = 30
+lambda_memory_size   = 512
+
+# If you already have a GitHub OIDC provider, set create_github_oidc = false
+# and provide the ARN:
+# existing_github_oidc_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
