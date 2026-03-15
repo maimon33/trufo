@@ -1,6 +1,6 @@
-output "function_url" {
-  description = "Lambda Function URL"
-  value       = aws_lambda_function_url.trufo_function_url.function_url
+output "api_gateway_url" {
+  description = "API Gateway URL"
+  value       = "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"
 }
 
 output "bucket_name" {
@@ -9,8 +9,21 @@ output "bucket_name" {
 }
 
 output "website_url" {
-  description = "Website URL (custom domain if configured, otherwise Function URL)"
-  value       = var.domain_name != "" ? "https://${var.domain_name}" : aws_lambda_function_url.trufo_function_url.function_url
+  description = "Website URL (custom domain if configured, otherwise API Gateway URL)"
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"
+}
+
+output "dns_target_external" {
+  description = "DNS target for external DNS providers"
+  value       = var.use_external_dns && var.domain_name != "" ? {
+    a_record = length(aws_api_gateway_domain_name.trufo_domain) > 0 ? aws_api_gateway_domain_name.trufo_domain[0].regional_domain_name : null
+    cname_record = "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com"
+  } : null
+}
+
+output "ssl_certificate_validation" {
+  description = "SSL Certificate DNS validation records (for external DNS)"
+  value       = var.use_external_dns && var.domain_name != "" ? "Check ACM console for DNS validation records" : null
 }
 
 output "github_actions_role_arn" {
@@ -42,6 +55,15 @@ output "ses_configuration_commands" {
   EOT
 }
 
+output "ses_domain_verification" {
+  description = "SES domain verification information"
+  value = var.ses_domain != "" ? {
+    domain = var.ses_domain
+    verification_token = aws_ses_domain_identity.trufo_domain[0].verification_token
+    dns_record = "Add TXT record: _amazonses.${var.ses_domain} with value ${aws_ses_domain_identity.trufo_domain[0].verification_token}"
+  } : null
+}
+
 output "deployment_info" {
   description = "Deployment information summary"
   value = {
@@ -49,8 +71,8 @@ output "deployment_info" {
     environment       = var.environment
     aws_region        = var.aws_region
     bucket_name       = aws_s3_bucket.trufo_storage.bucket
-    function_url      = aws_lambda_function_url.trufo_function_url.function_url
-    website_url       = var.domain_name != "" ? "https://${var.domain_name}" : aws_lambda_function_url.trufo_function_url.function_url
+    api_gateway_url   = "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"
+    website_url       = var.domain_name != "" ? "https://${var.domain_name}" : "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"
     custom_domain     = var.domain_name != "" ? var.domain_name : "Not configured"
     github_actions    = var.github_org != "" && var.github_repo != "" ? "Configured for ${var.github_org}/${var.github_repo}" : "Not configured"
   }
@@ -59,7 +81,7 @@ output "deployment_info" {
 output "api_endpoints" {
   description = "API endpoint information"
   value = {
-    base_url = aws_lambda_function_url.trufo_function_url.function_url
+    base_url = var.domain_name != "" ? "https://${var.domain_name}" : "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"
     endpoints = [
       "GET  / - Main interface",
       "GET  /create - Object creation page",
@@ -83,13 +105,15 @@ output "next_steps" {
 
     📋 Next Steps:
     1. Verify your email in SES: aws ses verify-email-identity --email-address ${var.from_email}
-    2. Test the application: ${var.domain_name != "" ? "https://${var.domain_name}" : aws_lambda_function_url.trufo_function_url.function_url}
-    3. Configure GitHub Actions (if applicable): Set AWS_ROLE_ARN variable to ${var.github_org != "" && var.github_repo != "" ? aws_iam_role.github_actions_role[0].arn : "N/A"}
-    4. Request SES production access for high-volume email sending
+    ${var.ses_domain != "" ? "2. Add SES domain verification DNS record: _amazonses.${var.ses_domain} TXT ${aws_ses_domain_identity.trufo_domain[0].verification_token}" : ""}
+    ${var.ses_domain != "" ? "3" : "2"}. Test the application: ${var.domain_name != "" ? "https://${var.domain_name}" : "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"}
+    ${var.ses_domain != "" ? "4" : "3"}. Configure GitHub Actions (if applicable): Set AWS_ROLE_ARN variable to ${var.github_org != "" && var.github_repo != "" ? aws_iam_role.github_actions_role[0].arn : "N/A"}
+    ${var.ses_domain != "" ? "5" : "4"}. Request SES production access for high-volume email sending
+    ${var.use_external_dns && var.domain_name != "" ? "${var.ses_domain != "" ? "6" : "5"}. Configure DNS with your external provider using the DNS targets from outputs" : ""}
 
     🌐 Access URLs:
-    - Website: ${var.domain_name != "" ? "https://${var.domain_name}" : aws_lambda_function_url.trufo_function_url.function_url}
-    - Create Page: ${var.domain_name != "" ? "https://${var.domain_name}" : aws_lambda_function_url.trufo_function_url.function_url}create
-    - Manage Page: ${var.domain_name != "" ? "https://${var.domain_name}" : aws_lambda_function_url.trufo_function_url.function_url}manage
+    - Website: ${var.domain_name != "" ? "https://${var.domain_name}" : "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"}
+    - Create Page: ${var.domain_name != "" ? "https://${var.domain_name}" : "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"}/create
+    - Manage Page: ${var.domain_name != "" ? "https://${var.domain_name}" : "https://${aws_api_gateway_rest_api.trufo_api.id}.execute-api.${var.aws_region}.amazonaws.com/prod"}/manage
   EOT
 }

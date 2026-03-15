@@ -32,3 +32,66 @@ pids
 *.pid
 *.seed
 *.pid.lock
+
+# AWS SAM build artifacts
+.aws-sam/
+sam/.aws-sam/
+sam/samconfig.toml
+
+# Generated CloudFormation templates (keep main template.yaml)
+template-full.yaml
+
+# Lambda deployment artifacts
+*.zip
+trufo-lambda.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# AWS credentials (important!)
+.aws/
+aws-exports.js
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+terraform.tfvars.json
+
+# IDE files
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+*.sublime-*
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup

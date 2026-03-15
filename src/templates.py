@@ -17,17 +17,16 @@ def serve_create_page() -> str:
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            margin: 0;
             padding: 20px;
         }
         .container {
             background: white;
             border-radius: 12px;
             padding: 2rem;
-            max-width: 500px;
+            max-width: 600px;
             width: 100%;
+            margin: 2rem auto;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
         }
         h1 { color: #333; margin-bottom: 1.5rem; text-align: center; }
@@ -77,6 +76,20 @@ def serve_create_page() -> str:
         }
         .result.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .result.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .intro-section {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border-left: 4px solid #667eea;
+        }
+        .intro-section ul {
+            margin: 1rem 0;
+            padding-left: 1.5rem;
+        }
+        .intro-section li {
+            margin-bottom: 0.5rem;
+        }
         .auth-section {
             border: 2px dashed #e1e5e9;
             border-radius: 6px;
@@ -96,12 +109,71 @@ def serve_create_page() -> str:
             margin-top: 1rem;
             font-family: monospace;
             font-size: 0.9rem;
+            word-break: break-all;
+            white-space: normal;
+        }
+        .ttl-presets {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .preset-btn {
+            background: #f8f9fa;
+            border: 2px solid #e1e5e9;
+            border-radius: 4px;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            color: #555;
+        }
+        .preset-btn:hover {
+            background: #e9ecef;
+            border-color: #667eea;
+        }
+        .preset-btn.active {
+            background: #667eea;
+            border-color: #667eea;
+            color: white;
+        }
+        .ttl-custom input {
+            margin-bottom: 0.25rem;
+        }
+        .ttl-custom small {
+            color: #666;
+            font-size: 0.8rem;
+        }
+        .ttl-preview {
+            background: #d4edda;
+            color: #155724;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+        .ttl-preview.error {
+            background: #f8d7da;
+            color: #721c24;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🔒 Trufo - Create Secret</h1>
+
+        <div class="intro-section">
+            <p><strong>Welcome to Trufo!</strong> A secure way to share temporary secrets and sensitive data.</p>
+            <p>You can create different types of secrets:</p>
+            <ul>
+                <li><strong>Text/String:</strong> Passwords, API keys, private notes</li>
+                <li><strong>Boolean:</strong> True/false flags for configuration</li>
+                <li><strong>Auto-Toggle:</strong> Values that flip between true/false on each access</li>
+            </ul>
+            <p>All secrets expire automatically and can be protected with TOTP 2FA.</p>
+        </div>
 
         <div class="auth-section" id="authSection">
             <p>Choose authentication method:</p>
@@ -111,6 +183,8 @@ def serve_create_page() -> str:
                     <label for="email">Email Address</label>
                     <input type="email" id="email" placeholder="your@email.com" required>
                 </div>
+
+
                 <button type="button" onclick="sendVerificationCode()">Send Verification Code</button>
 
                 <div class="form-group" id="codeGroup" style="display: none; margin-top: 1rem;">
@@ -142,8 +216,19 @@ def serve_create_page() -> str:
             </div>
 
             <div class="form-group">
-                <label for="ttlHours">Expires After (Hours)</label>
-                <input type="number" id="ttlHours" value="24" min="0.1" step="0.1" required>
+                <label for="ttl">Expires After</label>
+                <div class="ttl-presets">
+                    <button type="button" class="preset-btn" data-value="1h">1h</button>
+                    <button type="button" class="preset-btn" data-value="6h">6h</button>
+                    <button type="button" class="preset-btn" data-value="24h">24h</button>
+                    <button type="button" class="preset-btn" data-value="7d">7d</button>
+                    <button type="button" class="preset-btn" data-value="30d">30d</button>
+                </div>
+                <div class="ttl-custom">
+                    <input type="text" id="ttl" placeholder="24h" value="24h" pattern="^\\d+[hHdDwWmMyY]$" required>
+                    <small>Examples: 1h, 24h, 7d, 30d, 1y (max: 365d)</small>
+                </div>
+                <div id="ttlPreview" class="ttl-preview"></div>
             </div>
 
             <div class="form-group">
@@ -167,8 +252,167 @@ def serve_create_page() -> str:
         let userEmail = '';
         let userSecret = '';
 
+        // Behavioral analysis data
+        let behavioralData = {
+            mouse_moves: [],
+            keystrokes: [],
+            click_events: [],
+            focus_events: [],
+            page_load_time: Date.now(),
+            form_fill_start: null
+        };
+
+        // Behavioral tracking setup
+        document.addEventListener('DOMContentLoaded', function() {
+            // Mouse movement tracking
+            let mouseTrackingActive = false;
+            document.addEventListener('mousemove', function(e) {
+                if (mouseTrackingActive && behavioralData.mouse_moves.length < 50) {
+                    behavioralData.mouse_moves.push({
+                        x: e.clientX,
+                        y: e.clientY,
+                        timestamp: Date.now()
+                    });
+                }
+            });
+
+            // Click tracking
+            document.addEventListener('click', function(e) {
+                const rect = e.target.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const clickX = e.clientX;
+                const clickY = e.clientY;
+
+                // Check if click was exactly on center (suspicious)
+                const isPerfectCenter = Math.abs(clickX - centerX) < 2 && Math.abs(clickY - centerY) < 2;
+
+                behavioralData.click_events.push({
+                    x: clickX,
+                    y: clickY,
+                    target: {
+                        tag: e.target.tagName,
+                        id: e.target.id,
+                        className: e.target.className,
+                        perfect_center: isPerfectCenter
+                    },
+                    timestamp: Date.now()
+                });
+            });
+
+            // Focus tracking
+            document.addEventListener('focusin', function(e) {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                    behavioralData.focus_events.push({
+                        field: e.target.id || e.target.name,
+                        timestamp: Date.now()
+                    });
+                }
+            });
+
+            // Keystroke tracking
+            document.addEventListener('keydown', function(e) {
+                if (e.target.tagName === 'INPUT' && e.target.type === 'email') {
+                    behavioralData.keystrokes.push({
+                        key: e.key.length === 1 ? 'char' : e.key,
+                        timestamp: Date.now()
+                    });
+                }
+            });
+
+            // Start mouse tracking when user first interacts
+            document.addEventListener('mousedown', function() {
+                mouseTrackingActive = true;
+            }, { once: true });
+
+            // TTL preset buttons and parsing
+            setupTTLHandlers();
+        });
+
+        function setupTTLHandlers() {
+            const ttlInput = document.getElementById('ttl');
+            const previewDiv = document.getElementById('ttlPreview');
+            const presetBtns = document.querySelectorAll('.preset-btn');
+
+            // Preset button handlers
+            presetBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    presetBtns.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    ttlInput.value = this.dataset.value;
+                    updateTTLPreview();
+                });
+            });
+
+            // Input change handler
+            ttlInput.addEventListener('input', function() {
+                presetBtns.forEach(b => b.classList.remove('active'));
+                updateTTLPreview();
+            });
+
+            // Initial preview
+            updateTTLPreview();
+        }
+
+        function parseTTLToHours(ttlString) {
+            const match = ttlString.toLowerCase().match(/^(\\d+(?:\\.\\d+)?)([hdwmy])$/);
+            if (!match) return null;
+
+            const [, value, unit] = match;
+            const num = parseFloat(value);
+
+            switch (unit) {
+                case 'h': return num;
+                case 'd': return num * 24;
+                case 'w': return num * 24 * 7;
+                case 'm': return num * 24 * 30; // Approximate month
+                case 'y': return num * 24 * 365; // Year
+                default: return null;
+            }
+        }
+
+        function updateTTLPreview() {
+            const ttlInput = document.getElementById('ttl');
+            const previewDiv = document.getElementById('ttlPreview');
+            const ttlString = ttlInput.value.trim();
+
+            if (!ttlString) {
+                previewDiv.style.display = 'none';
+                return;
+            }
+
+            const hours = parseTTLToHours(ttlString);
+
+            if (hours === null || hours <= 0) {
+                previewDiv.innerHTML = 'Invalid format. Use: 1h, 24h, 7d, 30d, 1y';
+                previewDiv.className = 'ttl-preview error';
+                previewDiv.style.display = 'block';
+                return;
+            }
+
+            if (hours > 24 * 365) { // 365 days max
+                previewDiv.innerHTML = 'Maximum TTL is 365 days (8760 hours)';
+                previewDiv.className = 'ttl-preview error';
+                previewDiv.style.display = 'block';
+                return;
+            }
+
+            // Calculate expiry date
+            const now = new Date();
+            const expiry = new Date(now.getTime() + (hours * 60 * 60 * 1000));
+            const options = {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: 'numeric', minute: '2-digit', hour12: true
+            };
+
+            previewDiv.innerHTML = `Expires: ${expiry.toLocaleDateString('en-US', options)}`;
+            previewDiv.className = 'ttl-preview';
+            previewDiv.style.display = 'block';
+        }
+
         function showEmailAuth() {
             document.getElementById('emailForm').style.display = 'block';
+            behavioralData.form_fill_start = Date.now();
         }
 
         async function sendVerificationCode() {
@@ -178,11 +422,21 @@ def serve_create_page() -> str:
                 return;
             }
 
+            // Calculate timing data
+            const now = Date.now();
+            behavioralData.form_fill_time = behavioralData.form_fill_start ? now - behavioralData.form_fill_start : 0;
+            behavioralData.page_load_time = now - behavioralData.page_load_time;
+
+            const requestData = {
+                email,
+                behavioral_data: behavioralData
+            };
+
             try {
                 const response = await fetch('/api/validate-email', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
+                    body: JSON.stringify(requestData)
                 });
 
                 const data = await response.json();
@@ -229,11 +483,17 @@ def serve_create_page() -> str:
         document.getElementById('createForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const ttlHours = parseTTLToHours(document.getElementById('ttl').value);
+            if (!ttlHours || ttlHours <= 0 || ttlHours > 24 * 365) {
+                showResult('Please enter a valid TTL (1h to 365d)', 'error');
+                return;
+            }
+
             const formData = {
                 name: document.getElementById('name').value,
                 type: document.getElementById('type').value,
                 content: document.getElementById('content').value,
-                ttlHours: parseFloat(document.getElementById('ttlHours').value),
+                ttlHours: ttlHours,
                 ownerEmail: userEmail,
                 ownerName: userEmail.split('@')[0],
                 oneTimeAccess: document.getElementById('oneTimeAccess').checked,
@@ -250,15 +510,7 @@ def serve_create_page() -> str:
                 const data = await response.json();
                 if (response.ok) {
                     const accessUrl = `${window.location.origin}/access/${data.object.token}?secret=${userSecret}`;
-                    showResult(`
-                        <strong>Object created successfully!</strong><br>
-                        <div class="access-info">
-                            <strong>Access URL:</strong><br>
-                            <a href="${accessUrl}" target="_blank">${accessUrl}</a><br><br>
-                            <strong>Token:</strong> ${data.object.token}<br>
-                            <strong>Your Secret:</strong> ${userSecret}
-                        </div>
-                    `, 'success');
+                    showResult(`<strong>Object created successfully!</strong><br><div class="access-info"><strong>Access URL:</strong><br><a href="${accessUrl}" target="_blank">${accessUrl}</a><br><br><strong>Token:</strong> ${data.object.token}<br><strong>Your Secret:</strong> ${userSecret}</div>`, 'success');
                     document.getElementById('createForm').reset();
                 } else {
                     showResult(data.error, 'error');
@@ -307,9 +559,7 @@ def serve_access_page(token: str, query_params: dict) -> str:
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            margin: 0;
             padding: 20px;
         }}
         .container {{
@@ -318,6 +568,7 @@ def serve_access_page(token: str, query_params: dict) -> str:
             padding: 2rem;
             max-width: 600px;
             width: 100%;
+            margin: 2rem auto;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
         }}
         h1 {{ color: #333; margin-bottom: 1.5rem; text-align: center; }}
@@ -466,6 +717,7 @@ def serve_manage_page() -> str:
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            margin: 0;
             padding: 20px;
         }
         .container {
@@ -473,7 +725,8 @@ def serve_manage_page() -> str:
             border-radius: 12px;
             padding: 2rem;
             max-width: 1000px;
-            margin: 0 auto;
+            width: 100%;
+            margin: 2rem auto;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
         }
         h1 { color: #333; margin-bottom: 1.5rem; text-align: center; }

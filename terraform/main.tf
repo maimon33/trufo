@@ -154,7 +154,9 @@ resource "aws_iam_role_policy" "lambda_ses_policy" {
           "ses:SendEmail",
           "ses:SendRawEmail",
           "ses:GetSendQuota",
-          "ses:GetSendStatistics"
+          "ses:GetSendStatistics",
+          "ses:VerifyDomainIdentity",
+          "ses:GetIdentityVerificationAttributes"
         ]
         Resource = "*"
       }
@@ -269,19 +271,189 @@ resource "aws_lambda_function" "trufo_function" {
   }
 }
 
-# Lambda Function URL
-resource "aws_lambda_function_url" "trufo_function_url" {
-  function_name      = aws_lambda_function.trufo_function.function_name
-  authorization_type = "NONE"
+# API Gateway REST API
+resource "aws_api_gateway_rest_api" "trufo_api" {
+  name        = "${var.project_name}-api-${var.environment}"
+  description = "Trufo API Gateway"
 
-  cors {
-    allow_credentials = false
-    allow_headers     = ["content-type", "authorization"]
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allow_origins     = ["*"]
-    expose_headers    = []
-    max_age          = 86400
+  endpoint_configuration {
+    types = ["REGIONAL"]
   }
+
+  binary_media_types = ["*/*"]
+
+  tags = {
+    Name = "${var.project_name}-api"
+  }
+}
+
+# API Gateway Resource (proxy)
+resource "aws_api_gateway_resource" "trufo_proxy" {
+  rest_api_id = aws_api_gateway_rest_api.trufo_api.id
+  parent_id   = aws_api_gateway_rest_api.trufo_api.root_resource_id
+  path_part   = "{proxy+}"
+}
+
+# API Gateway Method (root)
+resource "aws_api_gateway_method" "trufo_method_root" {
+  rest_api_id   = aws_api_gateway_rest_api.trufo_api.id
+  resource_id   = aws_api_gateway_rest_api.trufo_api.root_resource_id
+  http_method   = "ANY"
+  authorization = "NONE"
+}
+
+# API Gateway Method (proxy)
+resource "aws_api_gateway_method" "trufo_method_proxy" {
+  rest_api_id   = aws_api_gateway_rest_api.trufo_api.id
+  resource_id   = aws_api_gateway_resource.trufo_proxy.id
+  http_method   = "ANY"
+  authorization = "NONE"
+}
+
+# API Gateway Integration (root)
+resource "aws_api_gateway_integration" "trufo_integration_root" {
+  rest_api_id             = aws_api_gateway_rest_api.trufo_api.id
+  resource_id             = aws_api_gateway_rest_api.trufo_api.root_resource_id
+  http_method             = aws_api_gateway_method.trufo_method_root.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.trufo_function.invoke_arn
+}
+
+# API Gateway Integration (proxy)
+resource "aws_api_gateway_integration" "trufo_integration_proxy" {
+  rest_api_id             = aws_api_gateway_rest_api.trufo_api.id
+  resource_id             = aws_api_gateway_resource.trufo_proxy.id
+  http_method             = aws_api_gateway_method.trufo_method_proxy.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.trufo_function.invoke_arn
+}
+
+# Lambda permission for API Gateway
+resource "aws_lambda_permission" "api_gateway_root" {
+  statement_id  = "AllowExecutionFromAPIGatewayRoot"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.trufo_function.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.trufo_api.execution_arn}/*/*"
+}
+
+# API Gateway Deployment
+resource "aws_api_gateway_deployment" "trufo_deployment" {
+  depends_on = [
+    aws_api_gateway_integration.trufo_integration_root,
+    aws_api_gateway_integration.trufo_integration_proxy,
+  ]
+
+  rest_api_id = aws_api_gateway_rest_api.trufo_api.id
+  stage_name  = "prod"
+
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.trufo_proxy.id,
+      aws_api_gateway_method.trufo_method_root.id,
+      aws_api_gateway_method.trufo_method_proxy.id,
+      aws_api_gateway_integration.trufo_integration_root.id,
+      aws_api_gateway_integration.trufo_integration_proxy.id,
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# CORS Gateway Responses
+resource "aws_api_gateway_gateway_response" "cors_4xx" {
+  rest_api_id   = aws_api_gateway_rest_api.trufo_api.id
+  response_type = "DEFAULT_4XX"
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+}
+
+resource "aws_api_gateway_gateway_response" "cors_5xx" {
+  rest_api_id   = aws_api_gateway_rest_api.trufo_api.id
+  response_type = "DEFAULT_5XX"
+
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+  }
+}
+
+# SSL Certificate for custom domain
+resource "aws_acm_certificate" "trufo_cert" {
+  count           = var.domain_name != "" ? 1 : 0
+  domain_name     = var.domain_name
+  subject_alternative_names = ["www.${var.domain_name}"]
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-certificate"
+  }
+}
+
+# Certificate validation (only if using Route53)
+resource "aws_acm_certificate_validation" "trufo_cert" {
+  count           = var.domain_name != "" && var.hosted_zone_id != "" && !var.use_external_dns ? 1 : 0
+  certificate_arn = aws_acm_certificate.trufo_cert[0].arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# Certificate validation records (only if using Route53)
+resource "aws_route53_record" "cert_validation" {
+  for_each = var.domain_name != "" && var.hosted_zone_id != "" && !var.use_external_dns ? {
+    for dvo in aws_acm_certificate.trufo_cert[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  } : {}
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = var.hosted_zone_id
+}
+
+# API Gateway Custom Domain
+resource "aws_api_gateway_domain_name" "trufo_domain" {
+  count           = var.domain_name != "" ? 1 : 0
+  domain_name     = var.domain_name
+  regional_certificate_arn = aws_acm_certificate.trufo_cert[0].arn
+  security_policy = "TLS_1_2"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+
+  depends_on = [
+    aws_acm_certificate_validation.trufo_cert
+  ]
+
+  tags = {
+    Name = "${var.project_name}-domain"
+  }
+}
+
+# API Gateway Base Path Mapping
+resource "aws_api_gateway_base_path_mapping" "trufo_mapping" {
+  count       = var.domain_name != "" ? 1 : 0
+  api_id      = aws_api_gateway_rest_api.trufo_api.id
+  stage_name  = aws_api_gateway_deployment.trufo_deployment.stage_name
+  domain_name = aws_api_gateway_domain_name.trufo_domain[0].domain_name
 }
 
 # CloudWatch Log Group
@@ -297,6 +469,12 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 # Get current AWS account ID
 data "aws_caller_identity" "current" {}
 
+# SES Domain Identity
+resource "aws_ses_domain_identity" "trufo_domain" {
+  count  = var.ses_domain != "" ? 1 : 0
+  domain = var.ses_domain
+}
+
 # Route53 Records (conditional)
 data "aws_route53_zone" "selected" {
   count   = var.domain_name != "" && var.hosted_zone_id != "" ? 1 : 0
@@ -304,19 +482,27 @@ data "aws_route53_zone" "selected" {
 }
 
 resource "aws_route53_record" "domain" {
-  count   = var.domain_name != "" && var.hosted_zone_id != "" ? 1 : 0
+  count   = var.domain_name != "" && var.hosted_zone_id != "" && !var.use_external_dns ? 1 : 0
   zone_id = var.hosted_zone_id
   name    = var.domain_name
-  type    = "CNAME"
-  ttl     = 300
-  records = [replace(replace(aws_lambda_function_url.trufo_function_url.function_url, "https://", ""), "/", "")]
+  type    = "A"
+
+  alias {
+    name                   = aws_api_gateway_domain_name.trufo_domain[0].regional_domain_name
+    zone_id                = aws_api_gateway_domain_name.trufo_domain[0].regional_zone_id
+    evaluate_target_health = false
+  }
 }
 
 resource "aws_route53_record" "www_domain" {
-  count   = var.domain_name != "" && var.hosted_zone_id != "" ? 1 : 0
+  count   = var.domain_name != "" && var.hosted_zone_id != "" && !var.use_external_dns ? 1 : 0
   zone_id = var.hosted_zone_id
   name    = "www.${var.domain_name}"
-  type    = "CNAME"
-  ttl     = 300
-  records = [replace(replace(aws_lambda_function_url.trufo_function_url.function_url, "https://", ""), "/", "")]
+  type    = "A"
+
+  alias {
+    name                   = aws_api_gateway_domain_name.trufo_domain[0].regional_domain_name
+    zone_id                = aws_api_gateway_domain_name.trufo_domain[0].regional_zone_id
+    evaluate_target_health = false
+  }
 }

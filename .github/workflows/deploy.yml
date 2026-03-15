@@ -6,7 +6,7 @@ on:
     paths:
       - '*.py'
       - 'requirements.txt'
-      - 'cloudformation.yaml'
+      - 'template.yaml'
   workflow_dispatch:
 
 env:

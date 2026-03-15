@@ -27,6 +27,12 @@ variable "from_email" {
   type        = string
 }
 
+variable "ses_domain" {
+  description = "Domain to verify in SES (optional, e.g., maimons.dev)"
+  type        = string
+  default     = ""
+}
+
 variable "domain_name" {
   description = "Custom domain name for the application (optional)"
   type        = string
@@ -37,6 +43,12 @@ variable "hosted_zone_id" {
   description = "Route53 hosted zone ID for the domain (optional)"
   type        = string
   default     = ""
+}
+
+variable "use_external_dns" {
+  description = "Set to true if using external DNS provider (not Route53)"
+  type        = bool
+  default     = false
 }
 
 variable "github_org" {

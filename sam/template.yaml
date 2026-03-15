@@ -1,0 +1,213 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Trufo Lambda + S3 Architecture
+
+Globals:
+  Api:
+    EndpointConfiguration: REGIONAL
+    BinaryMediaTypes:
+      - '*/*'
+    Cors:
+      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+      AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: "'*'"
+    Domain:
+      DomainName: !If [HasDomain, !Ref DomainName, !Ref 'AWS::NoValue']
+      CertificateArn: !If [HasDomain, 'arn:aws:acm:us-east-1:236565801201:certificate/96bd9196-b4a0-4f16-b808-4a12f2959365', !Ref 'AWS::NoValue']
+      EndpointConfiguration: REGIONAL
+      SecurityPolicy: TLS_1_2
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: trufo-storage-bucket
+    Description: Name for the S3 bucket
+
+  FromEmail:
+    Type: String
+    Default: noreply@trufo.com
+    Description: From email address (required for SES)
+
+  SESEmailDomain:
+    Type: String
+    Default: ''
+    Description: Domain to verify in SES (optional, e.g., maimons.dev)
+
+  DomainName:
+    Type: String
+    Default: ''
+    Description: Custom domain name (optional, e.g., trufo.example.com)
+
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Route53 Hosted Zone ID for the domain (leave empty if not using Route53)
+
+  UseExternalDNS:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set to true if using external DNS provider (not Route53)
+
+Conditions:
+  HasDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
+  UseExternalDNSProvider: !Equals [!Ref UseExternalDNS, 'true']
+  CreateRoute53Records: !And [!Condition HasDomain, !Condition HasHostedZone, !Not [!Condition UseExternalDNSProvider]]
+  HasDomainNoRoute53: !And [!Condition HasDomain, !Or [!Not [!Condition HasHostedZone], !Condition UseExternalDNSProvider]]
+  HasSESDomain: !Not [!Equals [!Ref SESEmailDomain, '']]
+
+Resources:
+  # S3 Bucket for object storage
+  TrufoStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  # Lambda execution role
+  TrufoLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub '${TrufoStorageBucket.Arn}/*'
+                  - !GetAtt TrufoStorageBucket.Arn
+        - PolicyName: SESAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                  - ses:GetSendQuota
+                  - ses:GetSendStatistics
+                  - ses:VerifyDomainIdentity
+                  - ses:GetIdentityVerificationAttributes
+                Resource: '*'
+
+  # Lambda function
+  TrufoLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../src
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.9
+      Timeout: 30
+      MemorySize: 512
+      Role: !GetAtt TrufoLambdaRole.Arn
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: !Ref TrufoStorageBucket
+          FROM_EMAIL: !Ref FromEmail
+          ENCRYPTION_KEY: !Sub '${AWS::StackName}-${AWS::AccountId}-key'
+      Events:
+        TrufoApiRoot:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+        TrufoApiProxy:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+        CleanupSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
+            Input: !Sub |
+              {
+                "httpMethod": "POST",
+                "path": "/api/cleanup",
+                "body": "{\"cleanup_key\": \"${AWS::StackName}-${AWS::AccountId}-keycleanup\"}"
+              }
+
+  # SES Domain Identity
+  SESDomainIdentity:
+    Type: AWS::SES::Identity
+    Condition: HasSESDomain
+    Properties:
+      Name: !Ref SESEmailDomain
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway URL
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiGatewayUrl'
+
+  BucketName:
+    Description: S3 Bucket Name
+    Value: !Ref TrufoStorageBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  WebsiteURL:
+    Description: Website URL
+    Value: !If
+      - HasDomain
+      - !Sub 'https://${DomainName}'
+      - !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+
+  DNSTarget:
+    Condition: HasDomainNoRoute53
+    Description: DNS target for external DNS providers
+    Value: !Sub '${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com'
+
+  CustomDomainInfo:
+    Condition: HasDomain
+    Description: Custom domain information (after deployment completes)
+    Value: 'Check SAM outputs for custom domain details'
+
+  SSLCertificateValidation:
+    Condition: HasDomainNoRoute53
+    Description: SSL Certificate DNS validation records (for external DNS providers)
+    Value: !If
+      - HasDomain
+      - 'Check ACM console for DNS validation records to add to your DNS provider'
+      - 'No SSL certificate needed'
+
+  SESVerifyEmail:
+    Description: Verify email in SES
+    Value: !Sub 'aws ses verify-email-identity --email-address ${FromEmail}'
+
+  SESDomainVerification:
+    Condition: HasSESDomain
+    Description: SES domain verification token
+    Value: !GetAtt SESDomainIdentity.VerificationToken
+
+  SESDomainDNSRecord:
+    Condition: HasSESDomain
+    Description: DNS TXT record to add for domain verification
+    Value: !Sub 'Add TXT record: _amazonses.${SESEmailDomain} with value ${SESDomainIdentity.VerificationToken}'

@@ -153,7 +153,7 @@ trufo/
 ├── lambda_function.py     # Main Lambda handler
 ├── templates.py           # HTML web interface
 ├── requirements.txt       # Python dependencies
-├── cloudformation.yaml    # Infrastructure as Code (SAM)
+├── template.yaml          # Infrastructure as Code (SAM)
 ├── terraform/            # Infrastructure as Code (Terraform)
 │   ├── main.tf           # Main Terraform configuration
 │   ├── variables.tf      # Input variables
@@ -186,8 +186,15 @@ trufo/
    ```
 
 2. **External DNS** (manual):
-   - Get Function URL from CloudFormation outputs
-   - Create CNAME: `trufo.example.com` → `{function-url-domain}`
+   ```bash
+   # Get DNS target from CloudFormation outputs
+   aws cloudformation describe-stacks --stack-name trufo-app \
+     --query 'Stacks[0].Outputs[?OutputKey==`DNSTarget`].OutputValue' --output text
+
+   # Get complete DNS instructions
+   aws cloudformation describe-stacks --stack-name trufo-app \
+     --query 'Stacks[0].Outputs[?OutputKey==`ExternalDNSInstructions`].OutputValue' --output text
+   ```
 
 #### With Terraform:
 1. **With Route53** (automatic):
@@ -197,8 +204,13 @@ trufo/
    ```
 
 2. **External DNS** (manual):
-   - Get Function URL from Terraform outputs: `terraform output function_url`
-   - Create CNAME: `trufo.example.com` → `{function-url-domain}`
+   ```bash
+   # Get DNS target from Terraform outputs
+   terraform output function_url
+
+   # Extract domain from Function URL
+   terraform output -raw function_url | sed 's|https://||' | sed 's|/.*||'
+   ```
 
 ### SES Production Access
 
