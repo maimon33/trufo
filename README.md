@@ -116,18 +116,49 @@ HOSTED_ZONE_ID    # Route53 zone ID (optional)
 
 ### Web Interface
 
-After deployment, access your Trufo instance:
+After deployment, access your Trufo instance through:
 
-- **Main Interface**: `https://your-function-url/`
-- **Create Objects**: `https://your-function-url/create`
-- **Manage Objects**: `https://your-function-url/manage`
-- **Access Objects**: `https://your-function-url/access/{token}`
+1. **Lambda Function URL** (default): Direct access to your Lambda function
+   - Main Interface: `https://{function-id}.lambda-url.{region}.on.aws/`
+   - Create Objects: `https://{function-id}.lambda-url.{region}.on.aws/create`
+   - Manage Objects: `https://{function-id}.lambda-url.{region}.on.aws/manage`
+   - Access Objects: `https://{function-id}.lambda-url.{region}.on.aws/access/{token}`
+
+2. **API Gateway** (when configured): More features and better performance
+   - Main Interface: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/`
+   - Create Objects: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/create`
+   - Manage Objects: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/manage`
+   - Access Objects: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/access/{token}`
+
+3. **Custom Domain** (optional): User-friendly URLs
+   - Main Interface: `https://trufo.yourdomain.com/`
+   - Create Objects: `https://trufo.yourdomain.com/create`
+   - Manage Objects: `https://trufo.yourdomain.com/manage`
+   - Access Objects: `https://trufo.yourdomain.com/access/{token}`
+
+### Get Your URLs
+
+```bash
+# Get Lambda Function URL
+aws cloudformation describe-stacks --stack-name trufo-app \
+  --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' --output text
+
+# Get API Gateway URL
+aws cloudformation describe-stacks --stack-name trufo-app \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' --output text
+
+# Get Custom Domain URL (if configured)
+aws cloudformation describe-stacks --stack-name trufo-app \
+  --query 'Stacks[0].Outputs[?OutputKey==`WebsiteURL`].OutputValue' --output text
+```
 
 ### API Endpoints
 
+Use any of the base URLs above with these API paths:
+
 ```bash
 # Create an object
-curl -X POST https://your-function-url/api/objects \
+curl -X POST https://your-base-url/api/objects \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-secret",
@@ -139,11 +170,24 @@ curl -X POST https://your-function-url/api/objects \
     "enableMFA": false
   }'
 
-# Access an object
-curl "https://your-function-url/api/objects?name=my-secret&token=abc123&secret=user-secret"
+# Access an object (API Gateway)
+curl "https://your-base-url/api/objects?name=my-secret&token=abc123&secret=user-secret"
+
+# Access an object (no-GUI direct link)
+curl "https://your-base-url/api/access/abc123?secret=user-secret"
 
 # List user objects
-curl "https://your-function-url/api/user-objects?email=user@example.com"
+curl "https://your-base-url/api/user-objects?email=user@example.com"
+
+# Send email validation
+curl -X POST https://your-base-url/api/send-email-validation \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com"}'
+
+# Verify email code
+curl -X POST https://your-base-url/api/verify-email-code \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "code": "123456"}'
 ```
 
 ## 📁 Project Structure

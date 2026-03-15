@@ -112,22 +112,33 @@ def serve_create_page() -> str:
             word-break: break-all;
             white-space: normal;
         }
+        .ttl-horizontal {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
         .ttl-presets {
             display: flex;
-            gap: 0.5rem;
-            margin-bottom: 0.75rem;
+            gap: 0.25rem;
             flex-wrap: wrap;
+            flex: 1;
+        }
+        .ttl-custom {
+            flex: 0 0 auto;
+            min-width: 120px;
         }
         .preset-btn {
             background: #f8f9fa;
-            border: 2px solid #e1e5e9;
-            border-radius: 4px;
-            padding: 0.5rem 0.75rem;
+            border: 1px solid #e1e5e9;
+            border-radius: 3px;
+            padding: 0.25rem 0.5rem;
             cursor: pointer;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             font-weight: 500;
             transition: all 0.2s;
             color: #555;
+            min-width: 40px;
         }
         .preset-btn:hover {
             background: #e9ecef;
@@ -157,6 +168,141 @@ def serve_create_page() -> str:
         .ttl-preview.error {
             background: #f8d7da;
             color: #721c24;
+        }
+        .security-info {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid #28a745;
+        }
+        .security-info.notice {
+            border-left-color: #ffc107;
+        }
+        .security-info.totp {
+            border-left-color: #dc3545;
+        }
+        .security-info h4 {
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        .security-info #securityDetails {
+            font-size: 0.9rem;
+            color: #666;
+            line-height: 1.4;
+        }
+        .security-options {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 0.5rem;
+        }
+        .security-option {
+            flex: 1;
+            min-width: 120px;
+            border: 1px solid #e1e5e9;
+            border-radius: 4px;
+            padding: 0.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .security-option:hover {
+            border-color: #667eea;
+            background: #f8f9fa;
+        }
+        .security-option input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .security-option input[type="radio"]:checked + label {
+            color: #667eea;
+        }
+        .security-option input[type="radio"]:checked ~ .security-option,
+        .security-option:has(input[type="radio"]:checked) {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        .security-option label {
+            cursor: pointer;
+            display: block;
+            margin: 0;
+        }
+        .security-option strong {
+            display: block;
+            margin-bottom: 0.2rem;
+            font-size: 0.9rem;
+        }
+        .security-option small {
+            color: #666;
+            font-size: 0.75rem;
+        }
+        .content-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .content-tab {
+            background: #f8f9fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 4px;
+            padding: 0.4rem 0.8rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            color: #666;
+            width: auto;
+        }
+        .content-tab:hover {
+            background: #e9ecef;
+            border-color: #667eea;
+        }
+        .content-tab.active {
+            background: #667eea;
+            border-color: #667eea;
+            color: white;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .container {
+                padding: 1rem;
+                margin: 1rem auto;
+                max-width: none;
+            }
+            .security-options {
+                flex-direction: column;
+                gap: 0.75rem;
+            }
+            .security-option {
+                min-width: auto;
+                text-align: center;
+            }
+            .ttl-horizontal {
+                flex-direction: column;
+                gap: 0.5rem;
+                align-items: stretch;
+            }
+            .ttl-custom {
+                min-width: auto;
+            }
+            .ttl-presets {
+                justify-content: center;
+            }
+            .preset-btn {
+                flex: 1;
+                min-width: 50px;
+            }
+            .content-tabs {
+                justify-content: center;
+            }
+            .intro-section {
+                padding: 1rem;
+            }
+            h1 { font-size: 1.5rem; }
         }
     </style>
 </head>
@@ -202,43 +348,88 @@ def serve_create_page() -> str:
             </div>
 
             <div class="form-group">
-                <label for="type">Object Type</label>
-                <select id="type" required>
-                    <option value="string">Text/String</option>
-                    <option value="boolean">True/False</option>
-                    <option value="toggle">Auto-Toggle</option>
-                </select>
-            </div>
-
-            <div class="form-group">
                 <label for="content">Content</label>
-                <textarea id="content" placeholder="Your secret content here..." required></textarea>
+                <div class="content-options">
+                    <div class="content-tabs">
+                        <button type="button" class="content-tab active" onclick="showTextContent()">Text</button>
+                        <button type="button" class="content-tab" onclick="showFileContent()">File</button>
+                    </div>
+                    <div id="textContent" class="content-input">
+                        <div class="form-group" style="margin-bottom: 0.75rem;">
+                            <label for="type">Text Type</label>
+                            <select id="type" required>
+                                <option value="string">Text/String</option>
+                                <option value="boolean">True/False</option>
+                                <option value="toggle">Auto-Toggle</option>
+                            </select>
+                        </div>
+                        <textarea id="content" placeholder="Your secret content here..." required></textarea>
+                        <small>Max: 1MB</small>
+                    </div>
+                    <div id="fileContent" class="content-input" style="display: none;">
+                        <input type="file" id="fileInput" accept="*/*">
+                        <small>Max: 1MB - File will be base64 encoded</small>
+                        <div id="filePreview" style="margin-top: 0.5rem; font-size: 0.8rem; color: #666;"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="form-group">
                 <label for="ttl">Expires After</label>
-                <div class="ttl-presets">
-                    <button type="button" class="preset-btn" data-value="1h">1h</button>
-                    <button type="button" class="preset-btn" data-value="6h">6h</button>
-                    <button type="button" class="preset-btn" data-value="24h">24h</button>
-                    <button type="button" class="preset-btn" data-value="7d">7d</button>
-                    <button type="button" class="preset-btn" data-value="30d">30d</button>
-                </div>
-                <div class="ttl-custom">
-                    <input type="text" id="ttl" placeholder="24h" value="24h" pattern="^\\d+[hHdDwWmMyY]$" required>
-                    <small>Examples: 1h, 24h, 7d, 30d, 1y (max: 365d)</small>
+                <div class="ttl-horizontal">
+                    <div class="ttl-presets">
+                        <button type="button" class="preset-btn" data-value="1h">1h</button>
+                        <button type="button" class="preset-btn" data-value="6h">6h</button>
+                        <button type="button" class="preset-btn" data-value="24h">24h</button>
+                        <button type="button" class="preset-btn" data-value="7d">7d</button>
+                        <button type="button" class="preset-btn" data-value="30d">30d</button>
+                    </div>
+                    <div class="ttl-custom">
+                        <input type="text" id="ttl" placeholder="24h" value="24h" pattern="^\\d+[hHdDwWmMyY]$" required>
+                        <small>1h, 7d, 30d, 1y (max: 365d)</small>
+                    </div>
                 </div>
                 <div id="ttlPreview" class="ttl-preview"></div>
+            </div>
+
+            <div class="form-group">
+                <label>🔒 Security Level</label>
+                <div class="security-options">
+                    <div class="security-option">
+                        <input type="radio" id="securityNone" name="security" value="none" checked>
+                        <label for="securityNone">
+                            <strong>None</strong><br>
+                            <small>Token access only (no extra verification)</small>
+                        </label>
+                    </div>
+                    <div class="security-option">
+                        <input type="radio" id="securityBasic" name="security" value="basic">
+                        <label for="securityBasic">
+                            <strong>Basic</strong><br>
+                            <small>Email verification required</small>
+                        </label>
+                    </div>
+                    <div class="security-option">
+                        <input type="radio" id="securityNotice" name="security" value="notice">
+                        <label for="securityNotice">
+                            <strong>Email Notifications</strong><br>
+                            <small>Get notified on every access</small>
+                        </label>
+                    </div>
+                    <div class="security-option">
+                        <input type="radio" id="securityTotp" name="security" value="totp">
+                        <label for="securityTotp">
+                            <strong>Maximum Security (TOTP)</strong><br>
+                            <small>Authenticator app + backup codes</small>
+                        </label>
+                    </div>
+                </div>
             </div>
 
             <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="oneTimeAccess">
                     <label for="oneTimeAccess">One-time access (delete after reading)</label>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="enableMFA">
-                    <label for="enableMFA">Enable TOTP 2FA</label>
                 </div>
             </div>
 
@@ -327,6 +518,23 @@ def serve_create_page() -> str:
 
             // TTL preset buttons and parsing
             setupTTLHandlers();
+
+            // Setup form handlers
+            setupFormHandlers();
+
+            // Initial auth section update
+            updateAuthSection();
+
+            // Add email input listener for auto-auth check
+            const emailInput = document.getElementById('email');
+            if (emailInput) {
+                emailInput.addEventListener('blur', async function() {
+                    const securityValue = document.querySelector('input[name="security"]:checked').value;
+                    if (securityValue !== 'none') {
+                        await checkExistingAuth();
+                    }
+                });
+            }
         });
 
         function setupTTLHandlers() {
@@ -415,11 +623,41 @@ def serve_create_page() -> str:
             behavioralData.form_fill_start = Date.now();
         }
 
+        async function checkExistingAuth() {
+            const emailInput = document.getElementById('email');
+            const email = emailInput.value;
+
+            if (email && email.includes('@')) {
+                try {
+                    const response = await fetch(`/api/check-auth?email=${encodeURIComponent(email)}`);
+                    const data = await response.json();
+
+                    if (data.authenticated) {
+                        userEmail = email;
+                        userSecret = data.userSecret;
+                        showResult('Already authenticated! You can create objects.', 'success');
+                        document.getElementById('authSection').style.display = 'none';
+                        document.getElementById('createForm').style.display = 'block';
+                        return true;
+                    }
+                } catch (error) {
+                    console.log('Auth check failed:', error);
+                }
+            }
+            return false;
+        }
+
         async function sendVerificationCode() {
             const email = document.getElementById('email').value;
             if (!email) {
                 showResult('Please enter an email address', 'error');
                 return;
+            }
+
+            // First check if user is already authenticated
+            const alreadyAuth = await checkExistingAuth();
+            if (alreadyAuth) {
+                return; // Skip sending code if already authenticated
             }
 
             // Calculate timing data
@@ -489,15 +727,22 @@ def serve_create_page() -> str:
                 return;
             }
 
+            const objectType = document.getElementById('type').value;
+            const securityType = document.querySelector('input[name="security"]:checked').value;
+
+            // Generate path from both selections
+            const pathType = securityType === 'basic' ? objectType : `${objectType}-${securityType}`;
+
             const formData = {
                 name: document.getElementById('name').value,
-                type: document.getElementById('type').value,
+                type: objectType,
+                securityType: securityType,
+                pathType: pathType, // This will be used for S3 path
                 content: document.getElementById('content').value,
                 ttlHours: ttlHours,
                 ownerEmail: userEmail,
                 ownerName: userEmail.split('@')[0],
-                oneTimeAccess: document.getElementById('oneTimeAccess').checked,
-                enableMFA: document.getElementById('enableMFA').checked
+                oneTimeAccess: document.getElementById('oneTimeAccess').checked
             };
 
             try {
@@ -510,7 +755,39 @@ def serve_create_page() -> str:
                 const data = await response.json();
                 if (response.ok) {
                     const accessUrl = `${window.location.origin}/access/${data.object.token}?secret=${userSecret}`;
-                    showResult(`<strong>Object created successfully!</strong><br><div class="access-info"><strong>Access URL:</strong><br><a href="${accessUrl}" target="_blank">${accessUrl}</a><br><br><strong>Token:</strong> ${data.object.token}<br><strong>Your Secret:</strong> ${userSecret}</div>`, 'success');
+                    let resultHtml = `<strong>Object created successfully!</strong><br>
+                        <div class="access-info">
+                            <strong>Access URL:</strong><br>
+                            <a href="${accessUrl}" target="_blank">${accessUrl}</a><br><br>
+                            <strong>Token:</strong> ${data.object.token}<br>
+                            <strong>Your Secret:</strong> ${userSecret}`;
+
+                    // Show TOTP and recovery codes if applicable (ONLY SHOWN ONCE!)
+                    if (data.security && data.security.totpSecret) {
+                        resultHtml += `<br><br>
+                            <div style="border: 2px solid #dc3545; padding: 1rem; margin-top: 1rem; border-radius: 6px; background: #fff5f5;">
+                                <h4 style="color: #dc3545; margin-bottom: 1rem;">⚠️ SAVE THIS INFORMATION NOW - IT WON'T BE SHOWN AGAIN!</h4>
+
+                                <strong>📱 TOTP Secret (for authenticator app):</strong><br>
+                                <code style="background: #f8f9fa; padding: 0.25rem;">${data.security.totpSecret}</code><br><br>
+
+                                <strong>📲 QR Code URL (scan with authenticator app):</strong><br>
+                                <small style="word-break: break-all; font-family: monospace;">${data.security.totpQR}</small><br><br>
+
+                                <strong>🔑 Emergency Backup Codes (use if you lose your phone):</strong><br>
+                                <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px; font-family: monospace;">`;
+
+                        data.security.recoveryCodes.forEach((code, index) => {
+                            resultHtml += `${code}${index % 2 === 1 ? '<br>' : '&nbsp;&nbsp;&nbsp;'}`;
+                        });
+
+                        resultHtml += `</div>
+                                <small style="color: #666;">Each backup code can only be used once. Store them securely!</small>
+                            </div>`;
+                    }
+
+                    resultHtml += '</div>';
+                    showResult(resultHtml, 'success');
                     document.getElementById('createForm').reset();
                 } else {
                     showResult(data.error, 'error');
@@ -527,16 +804,115 @@ def serve_create_page() -> str:
             result.style.display = 'block';
         }
 
-        // Handle boolean/toggle content
-        document.getElementById('type').addEventListener('change', (e) => {
-            const contentField = document.getElementById('content');
-            if (e.target.value === 'boolean' || e.target.value === 'toggle') {
-                contentField.value = 'true';
-                contentField.placeholder = 'true or false';
+        function setupFormHandlers() {
+            // Handle object type changes for content placeholder
+            document.getElementById('type').addEventListener('change', function(e) {
+                const contentField = document.getElementById('content');
+                const type = e.target.value;
+
+                if (type === 'boolean' || type === 'toggle') {
+                    contentField.value = 'true';
+                    contentField.placeholder = 'true or false';
+                } else {
+                    contentField.placeholder = 'Your secret content here...';
+                }
+            });
+
+            // Handle security option clicks
+            document.querySelectorAll('.security-option').forEach(option => {
+                option.addEventListener('click', function() {
+                    const radio = this.querySelector('input[type="radio"]');
+                    radio.checked = true;
+
+                    // Update visual selection
+                    document.querySelectorAll('.security-option').forEach(opt => {
+                        opt.style.borderColor = '#e1e5e9';
+                        opt.style.background = 'white';
+                    });
+                    this.style.borderColor = '#667eea';
+                    this.style.background = '#f0f4ff';
+
+                    // Show/hide auth section based on security level
+                    updateAuthSection();
+                });
+            });
+        }
+
+        function updateAuthSection() {
+            const securityValue = document.querySelector('input[name="security"]:checked').value;
+            const authSection = document.getElementById('authSection');
+            const createForm = document.getElementById('createForm');
+
+            // All security types require email authentication to CREATE
+            // "None" just means no verification needed to VIEW later
+            if (userEmail && userSecret) {
+                // Already authenticated
+                authSection.style.display = 'none';
+                createForm.style.display = 'block';
             } else {
-                contentField.placeholder = 'Your secret content here...';
+                // Need authentication for all security types
+                authSection.style.display = 'block';
+                createForm.style.display = 'none';
             }
-        });
+        }
+
+        function showTextContent() {
+            document.getElementById('textContent').style.display = 'block';
+            document.getElementById('fileContent').style.display = 'none';
+            document.querySelectorAll('.content-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector('.content-tab:first-child').classList.add('active');
+            document.getElementById('content').required = true;
+            document.getElementById('fileInput').required = false;
+        }
+
+        function showFileContent() {
+            document.getElementById('textContent').style.display = 'none';
+            document.getElementById('fileContent').style.display = 'block';
+            document.querySelectorAll('.content-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector('.content-tab:last-child').classList.add('active');
+            document.getElementById('content').required = false;
+            document.getElementById('fileInput').required = true;
+
+            // Set default type for files (files are always "string" type in backend)
+            document.getElementById('type').value = 'string';
+
+            // Setup file input handler
+            const fileInput = document.getElementById('fileInput');
+            if (!fileInput.hasAttribute('data-setup')) {
+                fileInput.addEventListener('change', handleFileSelect);
+                fileInput.setAttribute('data-setup', 'true');
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const preview = document.getElementById('filePreview');
+
+            // Check file size (1MB = 1024*1024 bytes)
+            if (file.size > 1024 * 1024) {
+                preview.innerHTML = '<span style="color: #721c24;">⚠️ File too large. Maximum size is 1MB.</span>';
+                event.target.value = '';
+                return;
+            }
+
+            preview.innerHTML = `📁 ${file.name} (${(file.size/1024).toFixed(1)}KB)`;
+
+            // Read file as base64
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                // Store base64 data in hidden content field
+                document.getElementById('content').value = JSON.stringify({
+                    type: 'file',
+                    filename: file.name,
+                    mimetype: file.type,
+                    size: file.size,
+                    data: e.target.result
+                });
+            };
+            reader.readAsDataURL(file);
+        }
     </script>
 </body>
 </html>

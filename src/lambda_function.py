@@ -9,7 +9,7 @@ import secrets
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, unquote
 import os
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from templates import serve_create_page, serve_access_page, serve_manage_page
 
 # AWS clients
@@ -99,6 +99,8 @@ def lambda_handler(event, context):
             return verify_email_code(body)
         elif path == '/api/cleanup' and method == 'POST':
             return cleanup_expired_objects(body)
+        elif path == '/api/check-auth' and method == 'GET':
+            return check_user_auth(event.get('headers', {}), query_params)
         else:
             return cors_response(404, {'error': 'Not found'})
 
@@ -152,6 +154,28 @@ def generate_s3_key(user_email: str, object_type: str, object_name: str) -> str:
 def generate_totp_secret() -> str:
     """Generate TOTP secret"""
     return base64.b32encode(secrets.token_bytes(20)).decode()
+
+def generate_recovery_codes(count: int = 8) -> List[str]:
+    """Generate backup recovery codes"""
+    codes = []
+    for _ in range(count):
+        # Generate 8-character alphanumeric codes
+        code = ''.join(secrets.choice('ABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
+        # Format as XXXX-XXXX
+        formatted_code = f"{code[:4]}-{code[4:]}"
+        codes.append(formatted_code)
+    return codes
+
+def verify_recovery_code(stored_codes: List[str], provided_code: str) -> bool:
+    """Verify and consume a recovery code"""
+    formatted_code = provided_code.upper().replace(' ', '').replace('-', '')
+    if len(formatted_code) == 8:
+        formatted_code = f"{formatted_code[:4]}-{formatted_code[4:]}"
+
+    if formatted_code in stored_codes:
+        stored_codes.remove(formatted_code)  # One-time use
+        return True
+    return False
 
 def verify_totp_token(secret: str, token: str) -> bool:
     """Verify TOTP token"""
@@ -335,7 +359,15 @@ def send_email_validation(body: Dict[str, Any]) -> Dict[str, Any]:
     # Send email
     try:
         send_email(email, 'Trufo Verification Code', f'Your verification code is: {code}')
-        return cors_response(200, {'message': 'Verification code sent'})
+
+        # Return response with cookie for verified users to reduce future MFA
+        response = cors_response(200, {'message': 'Verification code sent'})
+        if has_active_secrets:
+            # Set a cookie for verified users to reduce MFA requests
+            cookie_value = generate_user_secret(email)[:16]  # Short hash for cookie
+            response['headers']['Set-Cookie'] = f'trufo_verified={cookie_value}; Max-Age=2592000; HttpOnly; SameSite=Strict'  # 30 days
+
+        return response
     except Exception as e:
         return cors_response(500, {'error': 'Failed to send email', 'details': str(e)})
 
@@ -370,13 +402,98 @@ def verify_email_code(body: Dict[str, Any]) -> Dict[str, Any]:
         'userSecret': user_secret
     })
 
+def check_user_auth(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Dict[str, Any]:
+    """Check if user is already authenticated via cookie"""
+    email = query_params.get('email')
+    if not email:
+        return cors_response(400, {'error': 'Email parameter required'})
+
+    # Check cookie
+    cookie_header = headers.get('Cookie', headers.get('cookie', ''))
+    if cookie_header:
+        # Parse cookies
+        cookies = {}
+        for cookie in cookie_header.split(';'):
+            if '=' in cookie:
+                name, value = cookie.strip().split('=', 1)
+                cookies[name] = value
+
+        trufo_verified = cookies.get('trufo_verified')
+        if trufo_verified:
+            # Verify cookie matches user
+            expected_cookie = generate_user_secret(email)[:16]
+            if trufo_verified == expected_cookie:
+                # Check if user still has active secrets
+                if check_user_has_active_secrets(email):
+                    return cors_response(200, {
+                        'authenticated': True,
+                        'userSecret': generate_user_secret(email)
+                    })
+
+    return cors_response(200, {'authenticated': False})
+
+def count_user_objects(email: str) -> int:
+    """Count active objects for a user"""
+    try:
+        user_hash = hashlib.md5(email.lower().encode()).hexdigest()
+        current_time = int(time.time() * 1000)
+
+        # List all objects for this user
+        response = s3_client.list_objects_v2(
+            Bucket=BUCKET_NAME,
+            Prefix=f'users/{user_hash}/'
+        )
+
+        count = 0
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                try:
+                    # Skip directories
+                    if obj['Key'].endswith('/'):
+                        continue
+
+                    obj_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=obj['Key'])
+                    obj_data = json.loads(obj_response['Body'].read())
+
+                    # Only count non-expired objects
+                    if obj_data.get('ttl', 0) > current_time:
+                        count += 1
+                except Exception as e:
+                    print(f"Error checking object {obj['Key']}: {e}")
+                    continue
+
+        return count
+    except Exception as e:
+        print(f"Error counting user objects: {e}")
+        return 0
+
 # S3 Storage Operations
 def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
     """Create new object in S3"""
+    print(f"DEBUG - create_object body: {json.dumps(body, indent=2)}")
+
+    # All security types require email authentication to CREATE
+    # "None" just means no verification needed to ACCESS later
     required_fields = ['name', 'type', 'content', 'ttlHours', 'ownerEmail']
+
     for field in required_fields:
         if field not in body:
+            print(f"DEBUG - Missing field: {field}, body keys: {list(body.keys())}")
             return cors_response(400, {'error': f'Missing required field: {field}'})
+
+    # Validate content size (1MB limit)
+    content = body.get('content', '')
+    if len(str(content).encode('utf-8')) > 1024 * 1024:  # 1MB
+        return cors_response(400, {'error': 'Content too large. Maximum size is 1MB.'})
+
+    # Check user object count limit (30 per email)
+    try:
+        user_objects_count = count_user_objects(body['ownerEmail'])
+        if user_objects_count >= 30:
+            return cors_response(400, {'error': 'Maximum 30 objects per email address. Please delete some existing objects first.'})
+    except Exception as e:
+        print(f"Error checking user object count: {e}")
+        # Continue without blocking if we can't check
 
     # Validate TTL
     try:
@@ -391,11 +508,21 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
     token = secrets.token_hex(16)
     ttl = int(time.time() + (ttl_hours * 3600)) * 1000  # Convert to milliseconds
 
+    # Get security type and generate appropriate security data
+    security_type = body.get('securityType', 'basic')
+    totp_secret = None
+    recovery_codes = None
+
+    if security_type == 'totp':
+        totp_secret = generate_totp_secret()
+        recovery_codes = generate_recovery_codes()
+
     # Prepare object data
     object_data = {
         'id': object_id,
         'name': body['name'],
         'type': body['type'],
+        'securityType': security_type,
         'content': encrypt_content(body['content']),
         'ttl': ttl,
         'token': token,
@@ -405,12 +532,15 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
         'createdAt': int(time.time() * 1000),
         'lastHit': None,
         'oneTimeAccess': body.get('oneTimeAccess', False),
-        'totpSecret': generate_totp_secret() if body.get('enableMFA', False) else None
+        'totpSecret': totp_secret,
+        'recoveryCodes': recovery_codes
     }
 
     # Store in S3
     try:
-        s3_key = generate_s3_key(body['ownerEmail'], body['type'], body['name'])
+        # Use pathType (type-security combination) for S3 path organization
+        path_type = body.get('pathType', body['type'])
+        s3_key = generate_s3_key(body['ownerEmail'], path_type, body['name'])
         s3_client.put_object(
             Bucket=BUCKET_NAME,
             Key=s3_key,
@@ -429,11 +559,32 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
 
         user_secret = generate_user_secret(body['ownerEmail'])
 
-        return cors_response(201, {
+        # Prepare response with security info (shown only once)
+        response_data = {
             'success': True,
-            'object': object_data,
+            'object': {
+                'token': token,
+                'name': body['name'],
+                'type': body['type'],
+                'securityType': security_type,
+                'oneTimeAccess': body.get('oneTimeAccess', False),
+                'hitCount': 0,
+                'createdAt': object_data['createdAt'],
+                'ttl': ttl
+            },
             'userSecret': user_secret
-        })
+        }
+
+        # Include security data only on creation (show once)
+        if security_type == 'totp' and totp_secret and recovery_codes:
+            qr_url = f"otpauth://totp/Trufo:{body['name']}?secret={totp_secret}&issuer=Trufo"
+            response_data['security'] = {
+                'totpSecret': totp_secret,
+                'totpQR': qr_url,
+                'recoveryCodes': recovery_codes
+            }
+
+        return cors_response(201, response_data)
 
     except Exception as e:
         return cors_response(500, {'error': 'Failed to create object', 'details': str(e)})
@@ -462,10 +613,12 @@ def get_object(query_params: Dict[str, Any]) -> Dict[str, Any]:
         if name and object_data['name'] != name:
             return cors_response(404, {'error': 'Object not found or invalid token'})
 
-        # Verify user secret
-        expected_secret = generate_user_secret(object_data['ownerEmail'])
-        if secret != expected_secret:
-            return cors_response(403, {'error': 'Invalid secret for this object'})
+        # Verify user secret (skip for "none" security type)
+        security_type = object_data.get('securityType', 'basic')
+        if security_type != 'none':
+            expected_secret = generate_user_secret(object_data['ownerEmail'])
+            if secret != expected_secret:
+                return cors_response(403, {'error': 'Invalid secret for this object'})
 
         # Check expiration
         if object_data['ttl'] <= int(time.time() * 1000):
@@ -474,17 +627,37 @@ def get_object(query_params: Dict[str, Any]) -> Dict[str, Any]:
             s3_client.delete_object(Bucket=BUCKET_NAME, Key=token_key)
             return cors_response(410, {'error': 'Object has expired and has been deleted'})
 
-        # Handle MFA
-        if object_data.get('totpSecret'):
+        # Handle different security types
+        if security_type == 'none':
+            # No additional security for "none" type
+            pass
+
+        elif security_type == 'notice':
+            # Send notification email for notice-type objects
+            try:
+                if object_data['ownerEmail'] != 'anonymous@trufo.local':
+                    send_email(object_data['ownerEmail'], 'Trufo Access Alert',
+                              f'Your secret "{object_data["name"]}" was accessed at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} UTC')
+            except Exception as e:
+                print(f"Failed to send notification email: {e}")
+
+        elif security_type == 'totp':
+            # Handle TOTP and recovery codes
             if not totp_code:
                 return cors_response(403, {
                     'error': 'TOTP verification required',
                     'requiresTOTP': True,
-                    'totpQR': f"otpauth://totp/Trufo:{object_data['name']}?secret={object_data['totpSecret']}&issuer=Trufo" if object_data['hitCount'] == 0 else None
+                    'message': 'Enter your TOTP code from authenticator app or use a backup code'
                 })
 
-            if not verify_totp_token(object_data['totpSecret'], totp_code):
-                return cors_response(403, {'error': 'Invalid TOTP code'})
+            # Check if it's a recovery code first
+            recovery_codes = object_data.get('recoveryCodes', [])
+            if verify_recovery_code(recovery_codes, totp_code):
+                # Update object with remaining codes
+                object_data['recoveryCodes'] = recovery_codes
+                print(f"Recovery code used. Remaining codes: {len(recovery_codes)}")
+            elif not verify_totp_token(object_data['totpSecret'], totp_code):
+                return cors_response(403, {'error': 'Invalid TOTP code or backup code'})
 
         # Update hit count
         object_data['hitCount'] += 1
