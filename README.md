@@ -9,8 +9,10 @@ Trufo is a serverless secret storage service built with AWS Lambda and S3. Creat
 - **🔑 TOTP 2FA**: Optional two-factor authentication
 - **🔄 Toggle Objects**: Boolean objects that flip on each access
 - **📱 One-Time Access**: Self-destructing objects
-- **🌐 Web Interface**: Built-in HTML interface (no build required)
-- **📧 Email Validation**: Amazon SES integration
+- **🌐 Web Interface**: Built-in HTML interface with secret management
+- **📧 Email Validation**: Amazon SES integration with DKIM
+- **📊 Admin Monitoring**: Daily reports, usage alerts, kill switches
+- **🛡️ Enterprise Controls**: Real-time monitoring and operational dashboards
 - **🏗️ Serverless**: AWS Lambda + S3 architecture
 - **💰 Cost Effective**: No DynamoDB charges
 
@@ -42,10 +44,11 @@ Choose your preferred deployment method:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/trufo.git
+git clone https://github.com/maimon33/trufo.git
 cd trufo
 
 # Build and deploy
+cd sam
 sam build
 sam deploy --guided
 ```
@@ -54,7 +57,7 @@ sam deploy --guided
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/trufo.git
+git clone https://github.com/maimon33/trufo.git
 cd trufo/terraform
 
 # Initialize Terraform
@@ -75,10 +78,13 @@ terraform apply
 During `sam deploy --guided`, you'll be prompted for:
 
 - **FromEmail**: Email address for notifications (must verify in SES)
+- **AdminEmail**: Admin email for alerts and daily reports (optional)
+- **DailyUsageThreshold**: Daily object creation threshold for alerts (default: 1000)
+- **MonthlyUsageThreshold**: Monthly object creation threshold for alerts (default: 10000)
+- **EnableKillSwitch**: Enable emergency kill switch (default: false)
 - **DomainName**: Custom domain (optional, e.g., trufo.example.com)
 - **HostedZoneId**: Route53 hosted zone ID (optional)
-- **GitHubOrg**: Your GitHub username/organization
-- **GitHubRepo**: Repository name (for CI/CD)
+- **SESEmailDomain**: Domain for SES email deliverability (optional)
 
 #### For Terraform:
 Edit `terraform/terraform.tfvars` with your configuration:
@@ -118,23 +124,23 @@ HOSTED_ZONE_ID    # Route53 zone ID (optional)
 
 After deployment, access your Trufo instance through:
 
-1. **Lambda Function URL** (default): Direct access to your Lambda function
-   - Main Interface: `https://{function-id}.lambda-url.{region}.on.aws/`
-   - Create Objects: `https://{function-id}.lambda-url.{region}.on.aws/create`
-   - Manage Objects: `https://{function-id}.lambda-url.{region}.on.aws/manage`
-   - Access Objects: `https://{function-id}.lambda-url.{region}.on.aws/access/{token}`
+1. **API Gateway** (default): Feature-complete interface
+   - **Main Interface**: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/`
+   - **Access Objects**: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/access/{token}`
+   - **Secret Management**: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/secret/{token}`
 
-2. **API Gateway** (when configured): More features and better performance
-   - Main Interface: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/`
-   - Create Objects: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/create`
-   - Manage Objects: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/manage`
-   - Access Objects: `https://{api-id}.execute-api.{region}.amazonaws.com/Prod/access/{token}`
+2. **Custom Domain** (recommended): User-friendly URLs
+   - **Main Interface**: `https://trufo.yourdomain.com/`
+   - **Access Objects**: `https://trufo.yourdomain.com/access/{token}`
+   - **Secret Management**: `https://trufo.yourdomain.com/secret/{token}`
 
-3. **Custom Domain** (optional): User-friendly URLs
-   - Main Interface: `https://trufo.yourdomain.com/`
-   - Create Objects: `https://trufo.yourdomain.com/create`
-   - Manage Objects: `https://trufo.yourdomain.com/manage`
-   - Access Objects: `https://trufo.yourdomain.com/access/{token}`
+#### Web Interface Features:
+- **📧 Email Authentication**: Verify email to create secrets
+- **📋 My Secrets**: List and manage your created secrets
+- **🔄 Return Navigation**: Easy switching between create and list views
+- **🔥 One-time Access**: Option to delete after first read
+- **⚠️ TTL Configuration**: Set expiration from 1 hour to 1 year
+- **🔒 Security Levels**: None, Email Notification, TOTP 2FA
 
 ### Get Your URLs
 
@@ -164,57 +170,58 @@ curl -X POST https://your-base-url/api/objects \
     "name": "my-secret",
     "type": "string",
     "content": "Hello World!",
-    "ttlHours": 24,
+    "ttl": "24h",
     "ownerEmail": "user@example.com",
-    "oneTimeAccess": false,
-    "enableMFA": false
+    "security": "none",
+    "oneTimeAccess": false
   }'
 
-# Access an object (API Gateway)
-curl "https://your-base-url/api/objects?name=my-secret&token=abc123&secret=user-secret"
-
-# Access an object (no-GUI direct link)
+# Access an object
 curl "https://your-base-url/api/access/abc123?secret=user-secret"
 
-# List user objects
-curl "https://your-base-url/api/user-objects?email=user@example.com"
+# List user secrets
+curl -X POST https://your-base-url/api/list-secrets \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "secret": "user-secret"}'
 
 # Send email validation
-curl -X POST https://your-base-url/api/send-email-validation \
+curl -X POST https://your-base-url/api/validate-email \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com"}'
 
 # Verify email code
-curl -X POST https://your-base-url/api/verify-email-code \
+curl -X POST https://your-base-url/api/verify-code \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "code": "123456"}'
+
+# Toggle an object (for toggle type)
+curl -X POST https://your-base-url/api/toggle \
+  -H "Content-Type: application/json" \
+  -d '{"token": "abc123", "secret": "user-secret"}'
 ```
 
 ## 📁 Project Structure
 
 ```
 trufo/
-├── lambda_function.py     # Main Lambda handler
-├── templates.py           # HTML web interface
-├── requirements.txt       # Python dependencies
-├── template.yaml          # Infrastructure as Code (SAM)
-├── terraform/            # Infrastructure as Code (Terraform)
-│   ├── main.tf           # Main Terraform configuration
-│   ├── variables.tf      # Input variables
-│   ├── outputs.tf        # Output values
-│   ├── terraform.tfvars.example  # Example configuration
-│   └── README.md         # Terraform deployment guide
-├── .github/workflows/     # CI/CD automation
-│   ├── deploy.yml        # SAM deployment workflow
-│   └── terraform-deploy.yml  # Terraform deployment workflow
-├── README.md             # This file
-├── local-dev/            # React development environment
-│   ├── src/              # React components
-│   ├── package.json      # Node.js dependencies
-│   └── README.md         # Local development guide
-└── archive/              # Previous architectures
-    ├── lambda-dynamodb/  # Original DynamoDB version
-    └── lambda-s3-dev/    # Development version
+├── src/                      # Application source code
+│   ├── lambda_function.py    # Main Lambda handler
+│   ├── templates.py          # HTML web interface
+│   ├── reports.py            # Daily reporting system
+│   └── requirements.txt      # Python dependencies
+├── sam/                      # SAM deployment
+│   └── template.yaml         # Infrastructure as Code (SAM)
+├── terraform/                # Infrastructure as Code (Terraform)
+│   ├── main.tf              # Main Terraform configuration
+│   ├── variables.tf         # Input variables
+│   ├── outputs.tf           # Output values
+│   └── terraform.tfvars.example  # Example configuration
+├── .github/workflows/        # CI/CD automation
+│   └── deploy.yml           # SAM deployment workflow
+├── README.md                # This file
+├── ADMIN_OPERATIONS_GUIDE.md # Admin monitoring and operations
+├── SES_SETUP_GUIDE.md       # Email deliverability setup
+└── deploy.md               # Deployment instructions
 ```
 
 ## 🔧 Configuration
@@ -256,12 +263,34 @@ trufo/
    terraform output -raw function_url | sed 's|https://||' | sed 's|/.*||'
    ```
 
+### Admin Monitoring Setup
+
+Deploy with monitoring features:
+
+```bash
+sam deploy --parameter-overrides \
+  AdminEmail="admin@yourcompany.com" \
+  DailyUsageThreshold=1000 \
+  MonthlyUsageThreshold=10000 \
+  EnableKillSwitch=false
+```
+
+This enables:
+- **Daily Email Reports**: Usage statistics, storage stats, error summaries
+- **Real-time Alerts**: High usage, high error rates via SNS
+- **Emergency Kill Switch**: API Gateway throttling controls
+- **CloudWatch Dashboard**: Monitoring metrics and trends
+
+See [ADMIN_OPERATIONS_GUIDE.md](ADMIN_OPERATIONS_GUIDE.md) for complete operational procedures.
+
 ### SES Production Access
 
 For production use, request SES production access:
 1. Visit [AWS SES Console](https://console.aws.amazon.com/ses/)
 2. Go to "Sending statistics" → "Request production access"
 3. Complete the form with your use case
+
+For email deliverability setup, see [SES_SETUP_GUIDE.md](SES_SETUP_GUIDE.md)
 
 ### Environment Variables
 
@@ -354,7 +383,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/your-username/trufo/issues)
+- **Issues**: [GitHub Issues](https://github.com/maimon33/trufo/issues)
 - **Documentation**: This README and inline code comments
 - **AWS Support**: [AWS Documentation](https://docs.aws.amazon.com/)
 

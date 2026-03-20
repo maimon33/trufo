@@ -33,6 +33,27 @@ Parameters:
     Default: ''
     Description: Domain to verify in SES (optional, e.g., maimons.dev)
 
+  AdminEmail:
+    Type: String
+    Default: 'maimon33@gmail.com'
+    Description: Admin email for alerts and reports (required for monitoring)
+
+  DailyUsageThreshold:
+    Type: Number
+    Default: 1000
+    Description: Daily object creation threshold for high usage alert
+
+  MonthlyUsageThreshold:
+    Type: Number
+    Default: 10000
+    Description: Monthly object creation threshold for high usage alert
+
+  EnableKillSwitch:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable emergency kill switch via API Gateway throttling
+
   DomainName:
     Type: String
     Default: ''
@@ -56,6 +77,8 @@ Conditions:
   CreateRoute53Records: !And [!Condition HasDomain, !Condition HasHostedZone, !Not [!Condition UseExternalDNSProvider]]
   HasDomainNoRoute53: !And [!Condition HasDomain, !Or [!Not [!Condition HasHostedZone], !Condition UseExternalDNSProvider]]
   HasSESDomain: !Not [!Equals [!Ref SESEmailDomain, '']]
+  HasAdminEmail: !Not [!Equals [!Ref AdminEmail, '']]
+  KillSwitchEnabled: !Equals [!Ref EnableKillSwitch, 'true']
 
 Resources:
   # S3 Bucket for object storage
@@ -115,6 +138,14 @@ Resources:
                   - ses:VerifyDomainIdentity
                   - ses:GetIdentityVerificationAttributes
                 Resource: '*'
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
 
   # Lambda function
   TrufoLambdaFunction:
@@ -131,6 +162,7 @@ Resources:
           S3_BUCKET_NAME: !Ref TrufoStorageBucket
           FROM_EMAIL: !Ref FromEmail
           ENCRYPTION_KEY: !Sub '${AWS::StackName}-${AWS::AccountId}-key'
+          SES_CONFIGURATION_SET: !If [HasSESDomain, !Sub '${AWS::StackName}-trufo-config-set', '']
       Events:
         TrufoApiRoot:
           Type: Api
@@ -159,6 +191,152 @@ Resources:
     Condition: HasSESDomain
     Properties:
       Name: !Ref SESEmailDomain
+
+  # DKIM Configuration for SES
+  SESDKIMIdentity:
+    Type: AWS::SES::Identity
+    Condition: HasSESDomain
+    Properties:
+      Name: !Ref SESEmailDomain
+      DkimEnabled: true
+
+  # Configuration Set for reputation tracking
+  SESConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Condition: HasSESDomain
+    Properties:
+      Name: !Sub '${AWS::StackName}-trufo-config-set'
+      DeliveryOptions:
+        TlsPolicy: Require
+      ReputationTrackingEnabled: true
+      SendingEnabled: true
+
+  # SNS Topic for Admin Alerts
+  AdminAlertsTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAdminEmail
+    Properties:
+      TopicName: !Sub '${AWS::StackName}-admin-alerts'
+      DisplayName: 'Trufo Admin Alerts'
+      Subscription:
+        - Endpoint: !Ref AdminEmail
+          Protocol: email
+
+  # CloudWatch Alarms
+  HighDailyUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAdminEmail
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-high-daily-usage'
+      AlarmDescription: 'High daily object creation usage'
+      MetricName: TotalObjectCreated
+      Namespace: Trufo
+      Statistic: Sum
+      Period: 86400  # 24 hours
+      EvaluationPeriods: 1
+      Threshold: !Ref DailyUsageThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AdminAlertsTopic
+      TreatMissingData: notBreaching
+
+  HighMonthlyUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAdminEmail
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-high-monthly-usage'
+      AlarmDescription: 'High monthly object creation usage'
+      MetricName: TotalObjectCreated
+      Namespace: Trufo
+      Statistic: Sum
+      Period: 86400  # 24 hours
+      EvaluationPeriods: 7  # 7 days (CloudWatch max is 604800s = 7 days)
+      Threshold: !Ref MonthlyUsageThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AdminAlertsTopic
+      TreatMissingData: notBreaching
+
+  HighLambdaErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAdminEmail
+    Properties:
+      AlarmName: !Sub '${AWS::StackName}-high-error-rate'
+      AlarmDescription: 'High Lambda error rate'
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TrufoLambdaFunction
+      Statistic: Sum
+      Period: 300  # 5 minutes
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref AdminAlertsTopic
+
+  # API Gateway Usage Plan for Kill Switch
+  TrufoUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub '${AWS::StackName}-usage-plan'
+      Description: 'Usage plan with throttling controls for Trufo API'
+      ApiStages:
+        - ApiId: !Ref ServerlessRestApi
+          Stage: Prod
+      Throttle:
+        BurstLimit: !If [KillSwitchEnabled, 0, 10000]
+        RateLimit: !If [KillSwitchEnabled, 0, 5000]
+      Quota:
+        Limit: !If [KillSwitchEnabled, 0, 1000000]
+        Period: DAY
+
+  # Daily Report Lambda Function
+  DailyReportFunction:
+    Type: AWS::Serverless::Function
+    Condition: HasAdminEmail
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-daily-report'
+      CodeUri: ../src
+      Handler: reports.daily_report_handler
+      Runtime: python3.9
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: !Ref TrufoStorageBucket
+          ADMIN_EMAIL: !Ref AdminEmail
+          FROM_EMAIL: !Ref FromEmail
+          SES_CONFIGURATION_SET: !If [HasSESDomain, !Sub '${AWS::StackName}-trufo-config-set', '']
+          STACK_NAME: !Ref AWS::StackName
+          LAMBDA_FUNCTION_NAME: !Ref TrufoLambdaFunction
+          API_GATEWAY_NAME: !Ref AWS::StackName
+      Policies:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - cloudwatch:GetMetricStatistics
+                - cloudwatch:GetMetricData
+              Resource: '*'
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 8 * * ? *)  # 8 AM UTC daily
+            Input: !Sub |
+              {
+                "reportType": "daily",
+                "adminEmail": "${AdminEmail}"
+              }
 
 Outputs:
   ApiGatewayUrl:
@@ -211,3 +389,73 @@ Outputs:
     Condition: HasSESDomain
     Description: DNS TXT record to add for domain verification
     Value: !Sub 'Add TXT record: _amazonses.${SESEmailDomain} with value ${SESDomainIdentity.VerificationToken}'
+
+  SESDKIMRecords:
+    Condition: HasSESDomain
+    Description: DKIM DNS records to add for email authentication
+    Value: !Sub 'Add CNAME records for DKIM: Check SES console for 3 DKIM records to add to ${SESEmailDomain}'
+
+  RecommendedDNSRecords:
+    Condition: HasSESDomain
+    Description: Recommended DNS records for email deliverability
+    Value: !Sub |
+      Add these DNS records to ${SESEmailDomain}:
+
+      1. SPF Record (TXT):
+         Name: ${SESEmailDomain}
+         Value: "v=spf1 include:amazonses.com ~all"
+
+      2. DMARC Record (TXT):
+         Name: _dmarc.${SESEmailDomain}
+         Value: "v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@${SESEmailDomain}; ruf=mailto:dmarc-failures@${SESEmailDomain}; fo=1"
+
+      3. DKIM Records (CNAME):
+         Check AWS SES Console for 3 DKIM CNAME records after domain verification
+
+      4. MX Record (if receiving email):
+         Name: ${SESEmailDomain}
+         Priority: 10
+         Value: inbound-smtp.${AWS::Region}.amazonaws.com
+
+  SESConfigurationSetName:
+    Condition: HasSESDomain
+    Description: SES Configuration Set for reputation tracking
+    Value: !Sub '${AWS::StackName}-trufo-config-set'
+    Export:
+      Name: !Sub '${AWS::StackName}-SESConfigSet'
+
+  AdminAlertsTopicArn:
+    Condition: HasAdminEmail
+    Description: SNS Topic ARN for admin alerts
+    Value: !Ref AdminAlertsTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-AdminAlertsTopic'
+
+  KillSwitchInstructions:
+    Description: Emergency kill switch instructions
+    Value: !Sub |
+      KILL SWITCH CONTROLS:
+
+      1. API Gateway Throttling (Recommended):
+      aws apigateway update-usage-plan --usage-plan-id ${TrufoUsagePlan} --op replace --path "/throttle/rateLimit" --value "0"
+      aws apigateway update-usage-plan --usage-plan-id ${TrufoUsagePlan} --op replace --path "/throttle/burstLimit" --value "0"
+
+      2. Lambda Concurrency (Nuclear Option):
+      aws lambda put-provisioned-concurrency-config --function-name ${TrufoLambdaFunction} --qualifier \$LATEST --provisioned-concurrency-config 0
+
+      3. Re-enable Service:
+      aws apigateway update-usage-plan --usage-plan-id ${TrufoUsagePlan} --op replace --path "/throttle/rateLimit" --value "5000"
+      aws apigateway update-usage-plan --usage-plan-id ${TrufoUsagePlan} --op replace --path "/throttle/burstLimit" --value "10000"
+
+      Current Status: {'ACTIVE' if not KillSwitchEnabled else 'KILL SWITCH ENABLED'}
+
+  MonitoringDashboard:
+    Condition: HasAdminEmail
+    Description: CloudWatch Dashboard URL
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${AWS::StackName}-Trufo-Dashboard'
+
+  UsagePlanId:
+    Description: API Gateway Usage Plan ID for kill switch control
+    Value: !Ref TrufoUsagePlan
+    Export:
+      Name: !Sub '${AWS::StackName}-UsagePlan'

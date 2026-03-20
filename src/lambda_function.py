@@ -14,6 +14,7 @@ from templates import serve_create_page, serve_access_page, serve_manage_page
 
 # AWS clients
 s3_client = boto3.client('s3')
+cloudwatch_client = boto3.client('cloudwatch')
 
 # Configuration
 BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'trufo-storage')
@@ -22,6 +23,138 @@ ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', 'default-key-change-in-product
 
 # AWS SES client
 ses_client = boto3.client('ses')
+
+def get_anonymous_user_id(email: str) -> str:
+    """Generate anonymous user ID from email for analytics"""
+    return hashlib.sha256(email.encode()).hexdigest()[:8]
+
+def calculate_size_category(content_size: int) -> str:
+    """Categorize content size for analytics"""
+    if content_size < 1024:  # < 1KB
+        return 'small'
+    elif content_size < 10240:  # < 10KB
+        return 'medium'
+    elif content_size < 102400:  # < 100KB
+        return 'large'
+    else:  # >= 100KB
+        return 'xlarge'
+
+def verify_user_auth(body: Dict[str, Any]) -> Tuple[bool, str, str]:
+    """Strict authentication verification for protected endpoints"""
+    email = body.get('email')
+    provided_secret = body.get('secret')
+
+    if not email or not provided_secret:
+        return False, "Email and secret are required", ""
+
+    try:
+        # Normalize email for consistent verification
+        normalized_email = normalize_email(email)
+        expected_secret = generate_user_secret(normalized_email)
+
+        # Constant-time comparison to prevent timing attacks
+        if not hmac.compare_digest(provided_secret, expected_secret):
+            return False, "Invalid authentication credentials", ""
+
+        return True, "", normalized_email
+
+    except ValueError as e:
+        return False, str(e), ""
+    except Exception as e:
+        return False, "Authentication failed", ""
+
+def track_metrics(event_type: str, **kwargs):
+    """Track metrics to CloudWatch"""
+    try:
+        metrics = []
+
+        # Basic event metric
+        metrics.append({
+            'MetricName': f'Total{event_type}',
+            'Value': 1,
+            'Unit': 'Count'
+        })
+
+        # Object type dimension
+        if 'object_type' in kwargs:
+            metrics.append({
+                'MetricName': f'{event_type}ByType',
+                'Value': 1,
+                'Unit': 'Count',
+                'Dimensions': [{
+                    'Name': 'ObjectType',
+                    'Value': kwargs['object_type']
+                }]
+            })
+
+        # Security type dimension
+        if 'security_type' in kwargs:
+            metrics.append({
+                'MetricName': f'{event_type}BySecurity',
+                'Value': 1,
+                'Unit': 'Count',
+                'Dimensions': [{
+                    'Name': 'SecurityType',
+                    'Value': kwargs['security_type']
+                }]
+            })
+
+        # Size category for object creation
+        if event_type == 'ObjectCreated' and 'content_size' in kwargs:
+            size_category = calculate_size_category(kwargs['content_size'])
+            metrics.append({
+                'MetricName': 'ObjectsBySize',
+                'Value': 1,
+                'Unit': 'Count',
+                'Dimensions': [{
+                    'Name': 'SizeCategory',
+                    'Value': size_category
+                }]
+            })
+
+            # Track average size
+            metrics.append({
+                'MetricName': 'ObjectSize',
+                'Value': kwargs['content_size'],
+                'Unit': 'Bytes'
+            })
+
+        # Email type dimension (for EmailSent events)
+        if 'email_type' in kwargs:
+            metrics.append({
+                'MetricName': 'EmailSentByType',
+                'Value': 1,
+                'Unit': 'Count',
+                'Dimensions': [{
+                    'Name': 'EmailType',
+                    'Value': kwargs['email_type']
+                }]
+            })
+
+        # Anonymous user analytics
+        if 'email' in kwargs:
+            anon_user = get_anonymous_user_id(kwargs['email'])
+            metrics.append({
+                'MetricName': f'{event_type}ByUser',
+                'Value': 1,
+                'Unit': 'Count',
+                'Dimensions': [{
+                    'Name': 'AnonymousUser',
+                    'Value': anon_user
+                }]
+            })
+
+        # Send metrics to CloudWatch
+        cloudwatch_client.put_metric_data(
+            Namespace='Trufo',
+            MetricData=metrics
+        )
+
+        print(f"Tracked {len(metrics)} metrics for {event_type}")
+
+    except Exception as e:
+        print(f"Failed to track metrics: {str(e)}")
+        # Don't fail the main operation if metrics fail
 
 def lambda_handler(event, context):
     """Main Lambda handler for Trufo API and web interface"""
@@ -87,6 +220,10 @@ def lambda_handler(event, context):
             token = path.split('/api/access/')[1]
             query_params['token'] = token
             return get_object(query_params)
+        elif path == '/api/list-objects' and method == 'POST':
+            return list_user_objects(body)
+        elif path == '/api/delete-object' and method == 'POST':
+            return delete_user_object(body)
         elif path == '/api/user-objects' and method == 'GET':
             return get_user_objects(query_params)
         elif path == '/api/objects' and method == 'DELETE':
@@ -101,6 +238,15 @@ def lambda_handler(event, context):
             return cleanup_expired_objects(body)
         elif path == '/api/check-auth' and method == 'GET':
             return check_user_auth(event.get('headers', {}), query_params)
+        elif path == '/api/list-secrets' and method == 'POST':
+            return list_user_secrets(body)
+        elif path == '/api/send-magic-link' and method == 'POST':
+            return send_magic_link(body)
+        elif path == '/api/verify-magic-link' and method == 'POST':
+            return verify_magic_link(body)
+        elif path.startswith('/api/info/') and method == 'GET':
+            token = path.split('/api/info/')[1]
+            return get_object_info(token)
         else:
             return cors_response(404, {'error': 'Not found'})
 
@@ -117,7 +263,7 @@ def cors_response(status_code: int, data: Dict[str, Any], content_type: str = 'a
         'Content-Type': content_type
     }
 
-    if content_type == 'text/html':
+    if content_type in ('text/html', 'text/plain'):
         body = data if isinstance(data, str) else str(data)
     else:
         body = json.dumps(data)
@@ -128,9 +274,60 @@ def cors_response(status_code: int, data: Dict[str, Any], content_type: str = 'a
         'body': body
     }
 
+def normalize_email(email: str) -> str:
+    """Normalize email address to prevent abuse"""
+    if not email:
+        return email
+
+    email = email.strip().lower()
+
+    # Block emails with + character (alias abuse prevention)
+    if '+' in email:
+        raise ValueError('Email addresses with + characters are not allowed')
+
+    # Block other potentially abusive characters
+    blocked_chars = ['=', '&', '%', '$', '#']
+    for char in blocked_chars:
+        if char in email:
+            raise ValueError(f'Email addresses with {char} characters are not allowed')
+
+    # Split email into local and domain parts
+    if '@' not in email:
+        raise ValueError('Invalid email format')
+
+    local, domain = email.rsplit('@', 1)
+
+    # Gmail-style dot normalization (remove dots in local part)
+    if domain in ['gmail.com', 'googlemail.com']:
+        local = local.replace('.', '')
+
+    # Block suspicious patterns
+    if len(local) < 1 or len(domain) < 3:
+        raise ValueError('Invalid email format')
+
+    # Block disposable email domains
+    disposable_domains = {
+        '10minutemail.com', 'tempmail.org', 'guerrillamail.com', 'mailinator.com',
+        'yopmail.com', 'temp-mail.org', 'throwaway.email', 'maildrop.cc',
+        'getnada.com', 'tempmailo.com', '33mail.com', 'fakeinbox.com',
+        'temporaryemail.us', 'dispostable.com', '20minutemail.com'
+    }
+
+    if domain.lower() in disposable_domains:
+        raise ValueError('Disposable email addresses are not allowed')
+
+    return f"{local}@{domain}"
+
 def generate_user_secret(email: str) -> str:
     """Generate consistent user secret from email"""
-    return hashlib.sha256(email.lower().encode()).hexdigest()
+    # Use normalized email for consistent secret generation
+    normalized = normalize_email(email)
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+def get_base_url() -> str:
+    """Get base URL for the application"""
+    # For deployed version, we'll use the known domain
+    return "https://trufo.maimons.dev"
 
 def encrypt_content(content: Any) -> str:
     """Encrypt content for storage"""
@@ -148,7 +345,8 @@ def decrypt_content(encrypted_content: str) -> Any:
 
 def generate_s3_key(user_email: str, object_type: str, object_name: str) -> str:
     """Generate S3 key for object storage"""
-    user_hash = hashlib.md5(user_email.lower().encode()).hexdigest()
+    normalized_email = normalize_email(user_email)
+    user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
     return f"users/{user_hash}/{object_type}/{object_name}.json"
 
 def generate_totp_secret() -> str:
@@ -209,6 +407,7 @@ def generate_totp_for_time(secret: str, time_window: int) -> str:
 
 # Email validation system
 email_codes = {}  # In production, use DynamoDB or Redis
+magic_links = {}  # Store magic link tokens
 
 def analyze_bot_behavior(behavioral_data: Dict[str, Any]) -> bool:
     """Analyze behavioral data to detect bot-like patterns"""
@@ -329,6 +528,14 @@ def send_email_validation(body: Dict[str, Any]) -> Dict[str, Any]:
         print(f"DEBUG - Email validation failed, body was: {body}")
         return cors_response(400, {'error': 'Email is required'})
 
+    # Normalize and validate email
+    try:
+        normalized_email = normalize_email(email)
+        print(f"DEBUG - Normalized email: {normalized_email}")
+    except ValueError as e:
+        print(f"DEBUG - Email validation failed: {str(e)}")
+        return cors_response(400, {'error': str(e)})
+
     # Check if user has active secrets - skip behavioral analysis for existing users
     has_active_secrets = check_user_has_active_secrets(email)
 
@@ -345,8 +552,8 @@ def send_email_validation(body: Dict[str, Any]) -> Dict[str, Any]:
     # Generate 6-digit code
     code = str(secrets.randbelow(900000) + 100000)
 
-    # Create email hash for storage
-    email_hash = hashlib.md5(email.lower().encode()).hexdigest()
+    # Create email hash for storage using normalized email
+    email_hash = hashlib.md5(normalized_email.encode()).hexdigest()
 
     # Store code with expiration (5 minutes) and track last sent time
     email_codes[email_hash] = {
@@ -379,7 +586,13 @@ def verify_email_code(body: Dict[str, Any]) -> Dict[str, Any]:
     if not email or not code:
         return cors_response(400, {'error': 'Email and code are required'})
 
-    email_hash = hashlib.md5(email.lower().encode()).hexdigest()
+    # Normalize email first
+    try:
+        normalized_email = normalize_email(email)
+    except ValueError as e:
+        return cors_response(400, {'error': str(e)})
+
+    email_hash = hashlib.md5(normalized_email.encode()).hexdigest()
     stored_data = email_codes.get(email_hash)
     if not stored_data:
         return cors_response(400, {'error': 'No code found for this email'})
@@ -399,6 +612,112 @@ def verify_email_code(body: Dict[str, Any]) -> Dict[str, Any]:
 
     return cors_response(200, {
         'verified': True,
+        'userSecret': user_secret
+    })
+
+def send_magic_link(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Send magic link for instant authentication"""
+    email = body.get('email')
+    return_url = body.get('returnUrl', 'https://trufo.maimons.dev')
+
+    if not email:
+        return cors_response(400, {'error': 'Email is required'})
+
+    # Normalize email first
+    try:
+        normalized_email = normalize_email(email)
+    except ValueError as e:
+        return cors_response(400, {'error': str(e)})
+
+    # Generate magic link token
+    magic_token = secrets.token_urlsafe(32)
+
+    # Store magic link token with expiration (10 minutes)
+    magic_links[magic_token] = {
+        'email': normalized_email,
+        'expires': time.time() + 600  # 10 minutes
+    }
+
+    # Generate magic link URL
+    magic_url = f"{return_url}?auth={magic_token}"
+
+    # Send email
+    try:
+        subject = "✨ Your Trufo Magic Link"
+        body_text = f"""
+🔒 Trufo Magic Link Authentication
+
+Click the link below to instantly access your Trufo account:
+
+{magic_url}
+
+This link will expire in 10 minutes for security.
+
+If you didn't request this, you can safely ignore this email.
+        """
+
+        body_html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #667eea;">✨ Your Trufo Magic Link</h2>
+            <p>Click the button below to instantly access your Trufo account:</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{magic_url}"
+                   style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                          color: white; text-decoration: none; padding: 15px 30px;
+                          border-radius: 8px; display: inline-block; font-weight: bold;">
+                    🚀 Access Trufo Instantly
+                </a>
+            </div>
+            <p><small>This link will expire in 10 minutes for security.</small></p>
+            <p><small>If you didn't request this, you can safely ignore this email.</small></p>
+        </div>
+        """
+
+        ses_client.send_email(
+            Source=FROM_EMAIL,
+            Destination={'ToAddresses': [email]},
+            Message={
+                'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+                'Body': {
+                    'Text': {'Data': body_text, 'Charset': 'UTF-8'},
+                    'Html': {'Data': body_html, 'Charset': 'UTF-8'}
+                }
+            }
+        )
+
+        return cors_response(200, {'success': True, 'message': 'Magic link sent'})
+
+    except Exception as e:
+        print(f"Error sending magic link email: {str(e)}")
+        return cors_response(500, {'error': 'Failed to send magic link'})
+
+def verify_magic_link(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Verify magic link token and authenticate user"""
+    token = body.get('token')
+
+    if not token:
+        return cors_response(400, {'error': 'Token is required'})
+
+    # Check if token exists and is valid
+    magic_data = magic_links.get(token)
+    if not magic_data:
+        return cors_response(400, {'error': 'Invalid or expired magic link'})
+
+    # Check if token is expired
+    if time.time() > magic_data['expires']:
+        del magic_links[token]
+        return cors_response(400, {'error': 'Magic link has expired'})
+
+    # Token is valid, authenticate user
+    email = magic_data['email']
+    user_secret = generate_user_secret(email)
+
+    # Clean up used token
+    del magic_links[token]
+
+    return cors_response(200, {
+        'success': True,
+        'email': email,
         'userSecret': user_secret
     })
 
@@ -432,10 +751,88 @@ def check_user_auth(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Di
 
     return cors_response(200, {'authenticated': False})
 
+def list_user_secrets(body: Dict[str, Any]) -> Dict[str, Any]:
+    """List all secrets for authenticated user"""
+    try:
+        email = body.get('email', '').strip().lower()
+        user_secret = body.get('secret', '')
+
+        if not email or not user_secret:
+            return cors_response(400, {'error': 'Email and secret required'})
+
+        # Validate user secret
+        expected_secret = generate_user_secret(email)
+        if user_secret != expected_secret:
+            return cors_response(403, {'error': 'Invalid authentication'})
+
+        # Get user hash for searching (use MD5 to match storage structure)
+        normalized_email = normalize_email(email)
+        user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
+
+        # List all objects for this user (use correct prefix structure)
+        response = s3_client.list_objects_v2(
+            Bucket=BUCKET_NAME,
+            Prefix=f'users/{user_hash}/',
+            MaxKeys=1000
+        )
+
+        current_time = int(time.time() * 1000)
+        secrets = []
+
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                try:
+                    # Get object data
+                    obj_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=obj['Key'])
+                    obj_data = json.loads(obj_response['Body'].read())
+
+                    # Objects are already filtered by S3 prefix, so all belong to this user
+
+                    # Get basic info (decrypt content for preview)
+                    encrypted_content = obj_data.get('content', '')
+                    try:
+                        decrypted_content = decrypt_content(encrypted_content)
+                        preview = decrypted_content[:100] + '...' if len(decrypted_content) > 100 else decrypted_content
+                    except:
+                        preview = '[Content preview unavailable]'
+
+                    # Create secret info
+                    secret_info = {
+                        'token': obj_data.get('token'),
+                        'type': obj_data.get('type', 'string'),
+                        'security': obj_data.get('securityType', 'none'),
+                        'ttl': obj_data.get('ttl'),
+                        'preview': preview,
+                        'created': obj_data.get('createdAt'),
+                        'one_time': obj_data.get('oneTimeAccess', False),
+                        'access_count': obj_data.get('hitCount', 0),
+                        'access_url': f"{get_base_url()}/access/{obj_data.get('token')}?secret={user_secret}"
+                    }
+
+                    secrets.append(secret_info)
+
+                except Exception as e:
+                    print(f"Error reading object {obj['Key']}: {e}")
+                    continue
+
+        # Sort by creation time (newest first)
+        secrets.sort(key=lambda x: x.get('created', 0), reverse=True)
+
+        return cors_response(200, {
+            'success': True,
+            'secrets': secrets,
+            'total': len(secrets)
+        })
+
+    except Exception as e:
+        print(f"Error listing user secrets: {str(e)}")
+        return cors_response(500, {'error': 'Internal server error'})
+
 def count_user_objects(email: str) -> int:
     """Count active objects for a user"""
     try:
-        user_hash = hashlib.md5(email.lower().encode()).hexdigest()
+        normalized_email = normalize_email(email)
+        user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
         current_time = int(time.time() * 1000)
 
         # List all objects for this user
@@ -584,10 +981,39 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
                 'recoveryCodes': recovery_codes
             }
 
+        # Track metrics for object creation
+        content_size = len(str(body.get('content', '')).encode('utf-8'))
+        track_metrics('ObjectCreated',
+                     email=body['ownerEmail'],
+                     object_type=body['type'],
+                     security_type=security_type,
+                     content_size=content_size)
+
         return cors_response(201, response_data)
 
     except Exception as e:
         return cors_response(500, {'error': 'Failed to create object', 'details': str(e)})
+
+def get_object_info(token: str) -> Dict[str, Any]:
+    """Return object metadata (oneTimeAccess, type) without consuming the secret"""
+    try:
+        token_key = f"tokens/{token}.json"
+        token_obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=token_key)
+        token_data = json.loads(token_obj['Body'].read())
+
+        object_obj = s3_client.get_object(Bucket=BUCKET_NAME, Key=token_data['s3_key'])
+        object_data = json.loads(object_obj['Body'].read())
+
+        return cors_response(200, {
+            'oneTimeAccess': object_data.get('oneTimeAccess', False),
+            'type': object_data.get('type'),
+            'securityType': object_data.get('securityType', 'none')
+        })
+    except s3_client.exceptions.NoSuchKey:
+        return cors_response(404, {'error': 'Object not found or invalid token'})
+    except Exception as e:
+        return cors_response(500, {'error': 'Failed to retrieve object info', 'details': str(e)})
+
 
 def get_object(query_params: Dict[str, Any]) -> Dict[str, Any]:
     """Get object by token"""
@@ -687,10 +1113,24 @@ def get_object(query_params: Dict[str, Any]) -> Dict[str, Any]:
             s3_client.delete_object(Bucket=BUCKET_NAME, Key=token_data['s3_key'])
             s3_client.delete_object(Bucket=BUCKET_NAME, Key=token_key)
 
-        return cors_response(200, {
+        # Track metrics for object access
+        track_metrics('ObjectAccessed',
+                     email=object_data.get('ownerEmail'),
+                     object_type=object_data.get('type'),
+                     security_type=object_data.get('securityType', 'none'))
+
+        if query_params.get('raw') == 'true':
+            return cors_response(200, str(response_content), content_type='text/plain')
+
+        response_body = {
             'content': response_content,
-            'hits': object_data['hitCount']
-        })
+            'hits': object_data['hitCount'],
+            'oneTimeAccess': object_data.get('oneTimeAccess', False)
+        }
+        if object_data.get('oneTimeAccess', False):
+            response_body['warning'] = 'This secret has been permanently deleted. It will never be shown again.'
+
+        return cors_response(200, response_body)
 
     except s3_client.exceptions.NoSuchKey:
         return cors_response(404, {'error': 'Object not found or invalid token'})
@@ -704,7 +1144,8 @@ def get_user_objects(query_params: Dict[str, Any]) -> Dict[str, Any]:
         return cors_response(400, {'error': 'Email is required'})
 
     try:
-        user_hash = hashlib.md5(email.lower().encode()).hexdigest()
+        normalized_email = normalize_email(email)
+        user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
         prefix = f"users/{user_hash}/"
 
         # List all objects for user
@@ -805,6 +1246,12 @@ def toggle_object(body: Dict[str, Any]) -> Dict[str, Any]:
             ContentType='application/json'
         )
 
+        # Track metrics for toggle access
+        track_metrics('ObjectToggled',
+                     email=object_data.get('ownerEmail'),
+                     object_type=object_data.get('type'),
+                     security_type=object_data.get('securityType', 'none'))
+
         return cors_response(200, {
             'content': toggled_content,
             'hits': object_data['hitCount']
@@ -818,7 +1265,25 @@ def toggle_object(body: Dict[str, Any]) -> Dict[str, Any]:
 def send_email(to_email: str, subject: str, body: str):
     """Send email using Amazon SES with anti-spam headers"""
     try:
-        html_body = f"""
+        is_access_alert = 'Access Alert' in subject
+        if is_access_alert:
+            html_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; background-color: #f8f9fa; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <h2 style="color: #333; margin-bottom: 20px;">🔔 Trufo Access Alert</h2>
+                <p style="color: #555; font-size: 16px; line-height: 1.5;">{body}</p>
+                <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                <p style="color: #888; font-size: 12px; text-align: center;">
+                    This email was sent by Trufo - Secure Secret Sharing<br>
+                    <a href="https://trufo.maimons.dev" style="color: #667eea;">trufo.maimons.dev</a>
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        else:
+            html_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; background-color: #f8f9fa; padding: 20px;">
             <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
@@ -840,10 +1305,11 @@ def send_email(to_email: str, subject: str, body: str):
         </html>
         """
 
-        response = ses_client.send_email(
-            Source=f"Trufo Verification <{FROM_EMAIL}>",
-            Destination={'ToAddresses': [to_email]},
-            Message={
+        # Use configuration set if available for better deliverability
+        email_params = {
+            'Source': f"Trufo Verification <{FROM_EMAIL}>",
+            'Destination': {'ToAddresses': [to_email]},
+            'Message': {
                 'Subject': {
                     'Data': subject,
                     'Charset': 'UTF-8'
@@ -859,14 +1325,35 @@ def send_email(to_email: str, subject: str, body: str):
                     }
                 }
             },
-            Tags=[
+            'Tags': [
                 {
                     'Name': 'EmailType',
                     'Value': 'VerificationCode'
+                },
+                {
+                    'Name': 'Application',
+                    'Value': 'Trufo'
                 }
             ]
-        )
+        }
+
+        # Add configuration set if configured (for reputation tracking)
+        config_set_name = os.environ.get('SES_CONFIGURATION_SET')
+        if config_set_name:
+            email_params['ConfigurationSetName'] = config_set_name
+
+        response = ses_client.send_email(**email_params)
         print(f"Email sent successfully. MessageId: {response['MessageId']}")
+
+        # Track email send as custom metric
+        if 'Access Alert' in subject:
+            email_type = 'access_alert'
+        elif 'Magic Link' in subject:
+            email_type = 'magic_link'
+        else:
+            email_type = 'verification'
+        track_metrics('EmailSent', email_type=email_type)
+
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
         raise e
@@ -919,3 +1406,125 @@ def cleanup_expired_objects(body: Dict[str, Any]) -> Dict[str, Any]:
 
     except Exception as e:
         return cors_response(500, {'error': 'Cleanup failed', 'details': str(e)})
+
+def list_user_objects(body: Dict[str, Any]) -> Dict[str, Any]:
+    """List all objects for authenticated user - STRICT AUTH REQUIRED"""
+    # Strict authentication check
+    is_valid, error_msg, normalized_email = verify_user_auth(body)
+    if not is_valid:
+        track_metrics('UnauthorizedListAttempt', email=body.get('email', 'unknown'))
+        return cors_response(401, {'error': error_msg})
+
+    try:
+        normalized_email = normalize_email(normalized_email)
+        user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
+        prefix = f"users/{user_hash}/"
+
+        current_time = int(time.time() * 1000)
+        objects = []
+
+        # List all user objects from S3
+        response = s3_client.list_objects_v2(Bucket=BUCKET_NAME, Prefix=prefix)
+
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                try:
+                    # Skip directories and tokens
+                    if obj['Key'].endswith('/') or 'tokens/' in obj['Key']:
+                        continue
+
+                    obj_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=obj['Key'])
+                    obj_data = json.loads(obj_response['Body'].read())
+
+                    # Only include non-expired objects
+                    if obj_data.get('ttl', 0) > current_time:
+                        objects.append({
+                            'id': obj_data.get('id'),
+                            'name': obj_data.get('name'),
+                            'type': obj_data.get('type'),
+                            'securityType': obj_data.get('securityType', 'none'),
+                            'createdAt': obj_data.get('createdAt'),
+                            'ttl': obj_data.get('ttl'),
+                            'hitCount': obj_data.get('hitCount', 0),
+                            'oneTimeAccess': obj_data.get('oneTimeAccess', False),
+                            's3Key': obj['Key']  # For deletion
+                        })
+                except Exception as e:
+                    print(f"Error reading object {obj['Key']}: {e}")
+                    continue
+
+        # Track successful list operation
+        track_metrics('ObjectsListed',
+                     email=normalized_email,
+                     object_count=len(objects))
+
+        return cors_response(200, {
+            'success': True,
+            'objects': objects,
+            'total': len(objects)
+        })
+
+    except Exception as e:
+        print(f"Error listing user objects: {e}")
+        return cors_response(500, {'error': 'Failed to list objects', 'details': str(e)})
+
+def delete_user_object(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Delete specific object for authenticated user - STRICT AUTH REQUIRED"""
+    # Strict authentication check
+    is_valid, error_msg, normalized_email = verify_user_auth(body)
+    if not is_valid:
+        track_metrics('UnauthorizedDeleteAttempt', email=body.get('email', 'unknown'))
+        return cors_response(401, {'error': error_msg})
+
+    object_id = body.get('objectId')
+    s3_key = body.get('s3Key')
+
+    if not object_id or not s3_key:
+        return cors_response(400, {'error': 'Object ID and S3 key are required'})
+
+    try:
+        # Verify the object belongs to the authenticated user
+        user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
+        expected_prefix = f"users/{user_hash}/"
+
+        if not s3_key.startswith(expected_prefix):
+            return cors_response(403, {'error': 'Access denied - object does not belong to user'})
+
+        # Get object to verify ownership and get token for cleanup
+        try:
+            obj_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
+            obj_data = json.loads(obj_response['Body'].read())
+
+            # Double-check ownership
+            if obj_data.get('ownerEmail') != normalized_email:
+                return cors_response(403, {'error': 'Access denied - ownership mismatch'})
+
+            object_token = obj_data.get('token')
+        except s3_client.exceptions.NoSuchKey:
+            return cors_response(404, {'error': 'Object not found'})
+
+        # Delete the main object
+        s3_client.delete_object(Bucket=BUCKET_NAME, Key=s3_key)
+
+        # Delete the token reference if it exists
+        if object_token:
+            try:
+                token_key = f"tokens/{object_token}.json"
+                s3_client.delete_object(Bucket=BUCKET_NAME, Key=token_key)
+            except Exception as e:
+                print(f"Warning: Could not delete token reference {token_key}: {e}")
+
+        # Track successful deletion
+        track_metrics('ObjectDeleted',
+                     email=normalized_email,
+                     object_type=obj_data.get('type'),
+                     security_type=obj_data.get('securityType', 'none'))
+
+        return cors_response(200, {
+            'success': True,
+            'message': f'Object "{obj_data.get("name", "unknown")}" deleted successfully'
+        })
+
+    except Exception as e:
+        print(f"Error deleting object: {e}")
+        return cors_response(500, {'error': 'Failed to delete object', 'details': str(e)})
