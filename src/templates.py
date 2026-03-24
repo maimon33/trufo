@@ -1177,7 +1177,7 @@ def serve_create_page() -> str:
                                         <button onclick="copyFromRegistry('${rId}_id', this)" class="copy-btn-small">📋</button>
                                     </div>
                                     <div class="credential-row">
-                                        <strong>Your Token:</strong> <code class="credential-value" title="${userSecret}">${userSecret.substring(0, 20)}...</code>
+                                        <strong>Your Token:</strong> <code class="credential-value">${userSecret}</code>
                                         <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
                                     </div>
                                 </div>
@@ -1281,7 +1281,7 @@ def serve_create_page() -> str:
                                         <button onclick="copyFromRegistry('${rId}_id', this)" class="copy-btn-small">📋</button>
                                     </div>
                                     <div class="credential-row">
-                                        <strong>Your Token:</strong> <code class="credential-value" title="${userSecret}">${userSecret.substring(0, 20)}...</code>
+                                        <strong>Your Token:</strong> <code class="credential-value">${userSecret}</code>
                                         <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
                                     </div>
                                 </div>
@@ -1487,7 +1487,7 @@ def serve_create_page() -> str:
                                 <button onclick="copyFromRegistry('${regId}_token', this)" class="copy-btn-small">📋</button>
                             </div>
                             <div class="credential-row">
-                                <strong>Your Token:</strong> <code class="credential-value" title="${userSecret}">${userSecret.substring(0, 20)}...</code>
+                                <strong>Your Token:</strong> <code class="credential-value">${userSecret}</code>
                                 <button onclick="copyFromRegistry('${regId}_secret', this)" class="copy-btn-small">📋</button>
                             </div>
                         </div>
@@ -1697,6 +1697,37 @@ def serve_create_page() -> str:
             };
             reader.readAsDataURL(file);
         }
+
+        function copyFromRegistry(key, buttonElement) {{
+            const text = (window._copyRegistry || {})[key];
+            if (text) copyTextToClipboard(text, buttonElement);
+        }}
+
+        function copyTextToClipboard(text, buttonElement) {{
+            navigator.clipboard.writeText(text).then(() => {{
+                const originalText = buttonElement.textContent;
+                const originalBg = buttonElement.style.background;
+                buttonElement.textContent = '✓';
+                buttonElement.style.background = '#28a745';
+                buttonElement.style.color = 'white';
+                setTimeout(() => {{
+                    buttonElement.textContent = originalText;
+                    buttonElement.style.background = originalBg;
+                    buttonElement.style.color = '';
+                }}, 2000);
+            }}).catch(() => {{
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                const originalText = buttonElement.textContent;
+                buttonElement.textContent = '✓';
+                setTimeout(() => {{ buttonElement.textContent = originalText; }}, 2000);
+            }});
+        }}
     </script>
 </body>
 </html>
