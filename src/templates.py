@@ -476,24 +476,32 @@ def serve_create_page() -> str:
             margin: 1rem 0;
         }
         .credential-row {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
             margin-bottom: 0.75rem;
         }
         .credential-row:last-child {
             margin-bottom: 0;
         }
+        .credential-row strong {
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+        .credential-box {
+            position: relative;
+        }
         .credential-value {
+            display: block;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             font-size: 0.85rem;
             background: #f8f9fa;
-            padding: 0.25rem 0.5rem;
+            padding: 1.8rem 0.5rem 0.5rem 0.5rem;
             border-radius: 3px;
             border: 1px solid #e9ecef;
-            flex: 1;
+            word-break: break-all;
         }
         .copy-btn-small {
+            position: absolute;
+            top: 0.25rem;
+            right: 0.25rem;
             background: transparent;
             color: #666;
             border: none;
@@ -525,7 +533,7 @@ def serve_create_page() -> str:
             display: block;
             background: #f8f9fa;
             border: 1px solid #e9ecef;
-            padding: 0.5rem 2rem 0.5rem 0.5rem;
+            padding: 2rem 0.5rem 0.5rem 0.5rem;
             border-radius: 4px;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             font-size: 0.8rem;
@@ -1173,12 +1181,18 @@ def serve_create_page() -> str:
 
                                 <div class="secret-credentials">
                                     <div class="credential-row">
-                                        <strong>Secret ID:</strong> <code class="credential-value">${secretId}</code>
-                                        <button onclick="copyFromRegistry('${rId}_id', this)" class="copy-btn-small">📋</button>
+                                        <strong>Secret ID:</strong>
+                                        <div class="credential-box">
+                                            <code class="credential-value">${secretId}</code>
+                                            <button onclick="copyFromRegistry('${rId}_id', this)" class="copy-btn-small">📋</button>
+                                        </div>
                                     </div>
                                     <div class="credential-row">
-                                        <strong>Your Token:</strong> <code class="credential-value">${userSecret}</code>
-                                        <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
+                                        <strong>Your Token:</strong>
+                                        <div class="credential-box">
+                                            <code class="credential-value">${userSecret}</code>
+                                            <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1277,12 +1291,18 @@ def serve_create_page() -> str:
 
                                 <div class="secret-credentials">
                                     <div class="credential-row">
-                                        <strong>Secret ID:</strong> <code class="credential-value">${secretId}</code>
-                                        <button onclick="copyFromRegistry('${rId}_id', this)" class="copy-btn-small">📋</button>
+                                        <strong>Secret ID:</strong>
+                                        <div class="credential-box">
+                                            <code class="credential-value">${secretId}</code>
+                                            <button onclick="copyFromRegistry('${rId}_id', this)" class="copy-btn-small">📋</button>
+                                        </div>
                                     </div>
                                     <div class="credential-row">
-                                        <strong>Your Token:</strong> <code class="credential-value">${userSecret}</code>
-                                        <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
+                                        <strong>Your Token:</strong>
+                                        <div class="credential-box">
+                                            <code class="credential-value">${userSecret}</code>
+                                            <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1483,12 +1503,18 @@ def serve_create_page() -> str:
                     let resultHtml = `<strong>✅ Object created successfully!</strong><br>
                         <div class="secret-credentials" style="margin-top: 1rem;">
                             <div class="credential-row">
-                                <strong>Secret ID:</strong> <code class="credential-value">${data.object.token}</code>
-                                <button onclick="copyFromRegistry('${regId}_token', this)" class="copy-btn-small">📋</button>
+                                <strong>Secret ID:</strong>
+                                <div class="credential-box">
+                                    <code class="credential-value">${data.object.token}</code>
+                                    <button onclick="copyFromRegistry('${regId}_token', this)" class="copy-btn-small">📋</button>
+                                </div>
                             </div>
                             <div class="credential-row">
-                                <strong>Your Token:</strong> <code class="credential-value">${userSecret}</code>
-                                <button onclick="copyFromRegistry('${regId}_secret', this)" class="copy-btn-small">📋</button>
+                                <strong>Your Token:</strong>
+                                <div class="credential-box">
+                                    <code class="credential-value">${userSecret}</code>
+                                    <button onclick="copyFromRegistry('${regId}_secret', this)" class="copy-btn-small">📋</button>
+                                </div>
                             </div>
                         </div>
 
