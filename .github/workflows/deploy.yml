@@ -1,11 +1,11 @@
-name: Deploy Trufo Lambda + S3
+name: Deploy Trufo Lambda
 
 on:
   push:
     branches: [main]
     paths:
-      - 'src/**'
-      - 'sam/**'
+      - "src/**"
+      - "sam/**"
   workflow_dispatch:
 
 env:
