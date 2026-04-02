@@ -4,9 +4,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - '*.py'
-      - 'requirements.txt'
-      - 'template.yaml'
+      - 'src/**'
+      - 'sam/**'
   workflow_dispatch:
 
 env:
@@ -45,15 +44,17 @@ jobs:
     - name: Cache SAM build
       uses: actions/cache@v3
       with:
-        path: .aws-sam
-        key: ${{ runner.os }}-sam-${{ hashFiles('*.py', 'requirements.txt') }}
+        path: sam/.aws-sam
+        key: ${{ runner.os }}-sam-${{ hashFiles('src/**', 'sam/template.yaml') }}
         restore-keys: |
           ${{ runner.os }}-sam-
 
     - name: Build Lambda function
+      working-directory: sam
       run: sam build
 
     - name: Deploy to AWS
+      working-directory: sam
       run: |
         sam deploy \
           --stack-name ${{ env.STACK_NAME }} \
@@ -63,8 +64,6 @@ jobs:
             FromEmail="${{ vars.FROM_EMAIL }}" \
             DomainName="${{ vars.DOMAIN_NAME || '' }}" \
             HostedZoneId="${{ vars.HOSTED_ZONE_ID || '' }}" \
-            GitHubOrg="${{ github.repository_owner }}" \
-            GitHubRepo="${{ github.event.repository.name }}" \
           --no-confirm-changeset \
           --no-fail-on-empty-changeset
 
@@ -74,7 +73,7 @@ jobs:
         FUNCTION_URL=$(aws cloudformation describe-stacks \
           --stack-name ${{ env.STACK_NAME }} \
           --region ${{ env.AWS_REGION }} \
-          --query 'Stacks[0].Outputs[?OutputKey==`FunctionUrl`].OutputValue' \
+          --query 'Stacks[0].Outputs[?OutputKey==`WebsiteURL`].OutputValue' \
           --output text)
 
         BUCKET_NAME=$(aws cloudformation describe-stacks \

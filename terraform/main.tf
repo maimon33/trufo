@@ -212,7 +212,12 @@ resource "aws_iam_role_policy" "github_actions_policy" {
           "s3:*",
           "ses:*",
           "route53:*",
-          "logs:*"
+          "logs:*",
+          "apigateway:*",
+          "cloudwatch:*",
+          "sns:*",
+          "events:*",
+          "acm:*"
         ]
         Resource = "*"
       }
