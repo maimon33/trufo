@@ -65,6 +65,7 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --parameter-overrides "$PARAMS" \
+            --resolve-s3 \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
