@@ -56,47 +56,57 @@ jobs:
       - name: Deploy to AWS
         working-directory: sam
         run: |
+          PARAMS="FromEmail=${{ secrets.FROM_EMAIL }}"
+          if [ -n "${{ secrets.DOMAIN_NAME }}" ]; then
+            PARAMS="$PARAMS DomainName=${{ secrets.DOMAIN_NAME }} UseExternalDNS=true"
+          fi
           sam deploy \
             --stack-name ${{ env.STACK_NAME }} \
             --region ${{ env.AWS_REGION }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              FromEmail="${{ vars.FROM_EMAIL }}" \
-              DomainName="${{ vars.DOMAIN_NAME || '' }}" \
-              HostedZoneId="${{ vars.HOSTED_ZONE_ID || '' }}" \
+            --parameter-overrides "$PARAMS" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
       - name: Get deployment info
         id: deployment-info
         run: |
-          FUNCTION_URL=$(aws cloudformation describe-stacks \
+          STACK_OUTPUTS=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.STACK_NAME }} \
             --region ${{ env.AWS_REGION }} \
-            --query 'Stacks[0].Outputs[?OutputKey==`WebsiteURL`].OutputValue' \
-            --output text)
+            --query 'Stacks[0].Outputs' \
+            --output json)
 
-          BUCKET_NAME=$(aws cloudformation describe-stacks \
-            --stack-name ${{ env.STACK_NAME }} \
-            --region ${{ env.AWS_REGION }} \
-            --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' \
-            --output text)
+          get_output() {
+            echo "$STACK_OUTPUTS" | python3 -c "import sys,json; outputs=json.load(sys.stdin); print(next((o['OutputValue'] for o in outputs if o['OutputKey']=='$1'), ''))"
+          }
 
-          echo "function-url=$FUNCTION_URL" >> $GITHUB_OUTPUT
-          echo "bucket-name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          echo "website-url=$(get_output WebsiteURL)" >> $GITHUB_OUTPUT
+          echo "bucket-name=$(get_output BucketName)" >> $GITHUB_OUTPUT
+          echo "dns-target=$(get_output DNSTarget)" >> $GITHUB_OUTPUT
+          echo "ssl-validation=$(get_output SSLCertificateValidation)" >> $GITHUB_OUTPUT
 
       - name: Create deployment summary
         run: |
-          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Stack Name:** ${{ env.STACK_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "**S3 Bucket:** ${{ steps.deployment-info.outputs.bucket-name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- **Website:** ${{ steps.deployment-info.outputs.function-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Create Page:** ${{ steps.deployment-info.outputs.function-url }}create" >> $GITHUB_STEP_SUMMARY
-          echo "- **Manage Page:** ${{ steps.deployment-info.outputs.function-url }}manage" >> $GITHUB_STEP_SUMMARY
+          echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Website:** ${{ steps.deployment-info.outputs.website-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Create Page:** ${{ steps.deployment-info.outputs.website-url }}create" >> $GITHUB_STEP_SUMMARY
+          echo "- **Manage Page:** ${{ steps.deployment-info.outputs.website-url }}manage" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.deployment-info.outputs.dns-target }}" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### DNS Records to set at your provider" >> $GITHUB_STEP_SUMMARY
+            echo "| Type | Name | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| CNAME | ${{ secrets.DOMAIN_NAME }} | ${{ steps.deployment-info.outputs.dns-target }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.deployment-info.outputs.ssl-validation }}" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📡 API Endpoints" >> $GITHUB_STEP_SUMMARY
           echo "- \`POST /api/objects\` - Create object" >> $GITHUB_STEP_SUMMARY
