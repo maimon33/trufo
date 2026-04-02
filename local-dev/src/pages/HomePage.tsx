@@ -6,101 +6,107 @@ export default function HomePage() {
     <Layout title="Welcome to Trufo">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
-          <p className="text-xl text-gray-600 mb-8">
-            A secure, encrypted object storage system with TTL management and MFA protection
+          <p className="text-xl text-gray-600">
+            Encrypted object storage with TTL management and MFA protection
           </p>
-
-          <div className="mb-8 p-6 bg-red-50 border border-red-200 rounded-lg max-w-3xl mx-auto">
-            <h3 className="text-lg font-semibold text-red-800 mb-3">⚠️ Important Disclaimer</h3>
-            <div className="text-red-700 text-sm space-y-2">
-              <p><strong>This site takes no responsibility for keeping your data safe.</strong></p>
-              <p>• Never store secrets, passwords, API keys, or any sensitive information</p>
-              <p>• Site reliability is not promised - data may be lost at any time</p>
-              <p>• Use only for temporary, non-critical data</p>
-              <p>• Data is encrypted but treat as potentially insecure</p>
-            </div>
-          </div>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-8">
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Create Objects</h2>
+        <div className="grid md:grid-cols-5 gap-6 mb-16">
+          <div className="md:col-span-3 bg-white rounded-lg shadow-lg p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Create an Object</h2>
             <p className="text-gray-600 mb-6">
-              Create string, boolean, or toggle objects with encrypted storage, optional TOTP MFA,
-              and configurable TTL. Support for one-time access objects.
+              Store a string, boolean, or toggle value — encrypted, with an optional expiry and MFA protection. Get a shareable token when you're done.
             </p>
             <Link
               to="/create"
               className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-md transition-colors"
             >
-              Create Object
+              Get Started
             </Link>
           </div>
 
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Manage Objects</h2>
+          <div className="md:col-span-2 bg-white rounded-lg shadow p-8 flex flex-col justify-center">
+            <h2 className="text-xl font-bold text-gray-900 mb-3">My Objects</h2>
             <p className="text-gray-600 mb-6">
-              View, edit, and manage all your objects. Monitor access patterns,
-              update content, and track usage analytics.
+              View and manage everything you've stored.
             </p>
             <Link
               to="/manage"
-              className="inline-block bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-md transition-colors"
+              className="inline-block bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-2 px-6 rounded-md transition-colors w-fit"
             >
-              Manage Objects
+              Manage
             </Link>
           </div>
         </div>
 
-        <div className="mt-16">
-          <h2 className="text-2xl font-bold text-gray-900 mb-8 text-center">How It Works</h2>
+        <div className="mb-16">
+          <h2 className="text-xl font-semibold text-gray-900 mb-8 text-center">How it works</h2>
           <div className="grid md:grid-cols-3 gap-8">
             <div className="text-center">
-              <div className="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                <span className="text-blue-600 font-bold text-xl">1</span>
+              <div className="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4">
+                <span className="text-blue-600 font-bold">1</span>
               </div>
-              <h3 className="text-lg font-semibold mb-2">Create Object</h3>
-              <p className="text-gray-600">
-                Choose string, boolean, or toggle type. Set content, TTL, and optional MFA protection.
+              <h3 className="font-semibold mb-1">Create</h3>
+              <p className="text-gray-500 text-sm">
+                Pick a type, set your content, choose an expiry and optional MFA.
               </p>
             </div>
             <div className="text-center">
-              <div className="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                <span className="text-blue-600 font-bold text-xl">2</span>
+              <div className="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4">
+                <span className="text-blue-600 font-bold">2</span>
               </div>
-              <h3 className="text-lg font-semibold mb-2">Get Token</h3>
-              <p className="text-gray-600">
-                Receive a unique, secure token that grants access to your object.
+              <h3 className="font-semibold mb-1">Share</h3>
+              <p className="text-gray-500 text-sm">
+                You get a unique token — share the access URL with whoever needs it.
               </p>
             </div>
             <div className="text-center">
-              <div className="bg-blue-100 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-                <span className="text-blue-600 font-bold text-xl">3</span>
+              <div className="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-4">
+                <span className="text-blue-600 font-bold">3</span>
               </div>
-              <h3 className="text-lg font-semibold mb-2">Access Content</h3>
-              <p className="text-gray-600">
-                Use the access URL with token and optional TOTP code. Content is automatically decrypted.
+              <h3 className="font-semibold mb-1">Access</h3>
+              <p className="text-gray-500 text-sm">
+                Hit the URL — content is decrypted on the fly. One-time or repeatable.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="mt-16 bg-gray-100 rounded-lg p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">API Usage</h2>
-          <p className="text-gray-600 mb-6 text-center">
-            Access your objects programmatically using simple URLs:
-          </p>
+        <div className="mb-16 bg-gray-100 rounded-lg p-8">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 text-center">API</h2>
+          <p className="text-gray-500 text-sm mb-4 text-center">Access objects programmatically:</p>
           <div className="bg-gray-900 rounded-lg p-4 font-mono text-sm text-gray-100 overflow-x-auto">
             <div className="mb-2">
-              <span className="text-green-400">GET</span> /access/[object-name]?token=[your-token]&amp;totpCode=[123456]
+              <span className="text-green-400">GET</span> /access/[name]?token=[token]&amp;totpCode=[123456]
             </div>
-            <div className="mb-2">
-              <span className="text-yellow-400">POST</span> /api/toggle (for boolean objects)
+            <div>
+              <span className="text-yellow-400">POST</span> /api/toggle (flip a boolean)
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-4 text-center">
-            TOTP code optional for MFA-enabled objects. Toggle objects flip boolean values. Boolean objects can be toggled via API.
+        </div>
+
+        <div className="pt-8 border-t border-gray-200 text-center text-sm text-gray-400 space-y-3">
+          <p>
+            Data is encrypted but <strong>not guaranteed to persist</strong>. Don't store secrets, passwords, or API keys.
           </p>
+          <div className="flex justify-center gap-6">
+            <a
+              href="https://github.com/maimon33/trufo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-gray-600 transition-colors"
+            >
+              Source
+            </a>
+            <a
+              href="https://www.maimons.dev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-gray-600 transition-colors"
+            >
+              maimons.dev
+            </a>
+          </div>
         </div>
       </div>
     </Layout>
