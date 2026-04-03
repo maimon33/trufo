@@ -2,6 +2,12 @@
 
 Trufo is a serverless secret storage service built with AWS Lambda and S3. Create and share temporary encrypted objects with email validation, TOTP 2FA, and automatic expiration.
 
+## Chrome Extension
+
+Create secrets from any tab without leaving your browser. The extension stores your auth session for up to 30 days so one-click sharing is always one click away.
+
+→ **[maimon33/chrome-extensions](https://github.com/maimon33/chrome-extensions)** — source and releases
+
 ## ✨ Features
 
 - **🔐 Secure Storage**: Email validation and content encryption
