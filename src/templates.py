@@ -1757,7 +1757,7 @@ def serve_create_page() -> str:
     </script>
     <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e1e5e9; text-align: center; font-size: 0.8rem; color: #999;">
         <a href="https://github.com/maimon33/trufo" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Source</a>
-        <a href="https://github.com/maimon33/chrome-extensions" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Chrome Extension</a>
+        <a href="https://github.com/maimon33/chrome-extensions/tree/main/trufo" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Chrome Extension</a>
         <a href="https://www.maimons.dev" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">maimons.dev</a>
     </div>
 </body>
@@ -2286,7 +2286,7 @@ def serve_manage_page() -> str:
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e1e5e9; text-align: center; font-size: 0.8rem; color: #999;">
         <a href="https://github.com/maimon33/trufo" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Source</a>
-        <a href="https://github.com/maimon33/chrome-extensions" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Chrome Extension</a>
+        <a href="https://github.com/maimon33/chrome-extensions/tree/main/trufo" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Chrome Extension</a>
         <a href="https://www.maimons.dev" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">maimons.dev</a>
     </div>
 </body>
