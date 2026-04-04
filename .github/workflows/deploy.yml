@@ -49,11 +49,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-sam-
 
-      - name: Build Lambda function
+      - name: Build
         working-directory: sam
-        run: sam build
+        run: sam build --quiet
 
-      - name: Deploy to AWS
+      - name: Deploy
         working-directory: sam
         run: |
           PARAMS="FromEmail=${{ secrets.FROM_EMAIL }} AdminEmail=${{ secrets.ADMIN_EMAIL }}"
@@ -67,10 +67,12 @@ jobs:
             --parameter-overrides "$PARAMS" \
             --resolve-s3 \
             --no-confirm-changeset \
-            --no-fail-on-empty-changeset
+            --no-fail-on-empty-changeset \
+            --no-progressbar \
+            2>&1 | grep -E "^\s*(Modify|Add|Delete|UPDATE_|CREATE_|trufo-api|Successfully|No changes|CloudFormation stack changeset)" \
+            | grep -v "CLEANUP"
 
-      - name: Get deployment info
-        id: deployment-info
+      - name: Deployment summary
         run: |
           STACK_OUTPUTS=$(aws cloudformation describe-stacks \
             --stack-name ${{ env.STACK_NAME }} \
@@ -79,41 +81,23 @@ jobs:
             --output json)
 
           get_output() {
-            echo "$STACK_OUTPUTS" | python3 -c "import sys,json; outputs=json.load(sys.stdin); print(next((o['OutputValue'] for o in outputs if o['OutputKey']=='$1'), ''))"
+            echo "$STACK_OUTPUTS" | python3 -c "
+          import sys, json
+          outputs = json.load(sys.stdin)
+          print(next((o['OutputValue'] for o in outputs if o['OutputKey'] == '$1'), 'N/A'))
+          "
           }
 
-          echo "website-url=$(get_output WebsiteURL)" >> $GITHUB_OUTPUT
-          echo "bucket-name=$(get_output BucketName)" >> $GITHUB_OUTPUT
-          echo "dns-target=$(get_output DNSTarget)" >> $GITHUB_OUTPUT
-          echo "ssl-validation=$(get_output SSLCertificateValidation)" >> $GITHUB_OUTPUT
+          WEBSITE=$(get_output WebsiteURL)
+          API=$(get_output ApiGatewayUrl)
 
-      - name: Create deployment summary
-        run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Trufo deployed successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Stack Name:** ${{ env.STACK_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**S3 Bucket:** ${{ steps.deployment-info.outputs.bucket-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Website** | $WEBSITE |" >> $GITHUB_STEP_SUMMARY
+          echo "| **API** | $API |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Create** | ${WEBSITE}create |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Manage** | ${WEBSITE}manage |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- **Website:** ${{ steps.deployment-info.outputs.website-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Create Page:** ${{ steps.deployment-info.outputs.website-url }}create" >> $GITHUB_STEP_SUMMARY
-          echo "- **Manage Page:** ${{ steps.deployment-info.outputs.website-url }}manage" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ steps.deployment-info.outputs.dns-target }}" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### DNS Records to set at your provider" >> $GITHUB_STEP_SUMMARY
-            echo "| Type | Name | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|------|------|-------|" >> $GITHUB_STEP_SUMMARY
-            echo "| CNAME | ${{ secrets.DOMAIN_NAME }} | ${{ steps.deployment-info.outputs.dns-target }} |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "${{ steps.deployment-info.outputs.ssl-validation }}" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📡 API Endpoints" >> $GITHUB_STEP_SUMMARY
-          echo "- \`POST /api/objects\` - Create object" >> $GITHUB_STEP_SUMMARY
-          echo "- \`GET /api/objects\` - Access object" >> $GITHUB_STEP_SUMMARY
-          echo "- \`GET /api/user-objects\` - List user objects" >> $GITHUB_STEP_SUMMARY
-          echo "- \`DELETE /api/objects\` - Delete object" >> $GITHUB_STEP_SUMMARY
-          echo "- \`POST /api/toggle\` - Toggle boolean object" >> $GITHUB_STEP_SUMMARY
-          echo "- \`POST /api/validate-email\` - Send email validation" >> $GITHUB_STEP_SUMMARY
-          echo "- \`POST /api/verify-code\` - Verify email code" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\` by **${{ github.actor }}**" >> $GITHUB_STEP_SUMMARY
