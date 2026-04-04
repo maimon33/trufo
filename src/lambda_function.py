@@ -324,6 +324,14 @@ def generate_user_secret(email: str) -> str:
     normalized = normalize_email(email)
     return hashlib.sha256(normalized.encode()).hexdigest()
 
+def generate_object_secret(token: str, owner_email: str, created_at: int) -> str:
+    """Generate a per-object access secret using HMAC-SHA256.
+    Inputs: token (random, per-object) + owner email + creation timestamp.
+    The server key ensures it cannot be forged without server-side knowledge.
+    """
+    message = f"{token}:{normalize_email(owner_email)}:{created_at}".encode()
+    return hmac.new(ENCRYPTION_KEY.encode(), message, hashlib.sha256).hexdigest()
+
 def get_base_url() -> str:
     """Get base URL for the application"""
     # For deployed version, we'll use the known domain
@@ -796,17 +804,27 @@ def list_user_secrets(body: Dict[str, Any]) -> Dict[str, Any]:
                     except:
                         preview = '[Content preview unavailable]'
 
+                    # Compute per-object access secret
+                    obj_token = obj_data.get('token')
+                    obj_created = obj_data.get('createdAt', 0)
+                    obj_access_secret = generate_object_secret(
+                        obj_token,
+                        obj_data.get('ownerEmail', ''),
+                        obj_created
+                    )
+
                     # Create secret info
                     secret_info = {
-                        'token': obj_data.get('token'),
+                        'token': obj_token,
+                        'access_secret': obj_access_secret,
                         'type': obj_data.get('type', 'string'),
                         'security': obj_data.get('securityType', 'none'),
                         'ttl': obj_data.get('ttl'),
                         'preview': preview,
-                        'created': obj_data.get('createdAt'),
+                        'created': obj_created,
                         'one_time': obj_data.get('oneTimeAccess', False),
                         'access_count': obj_data.get('hitCount', 0),
-                        'access_url': f"{get_base_url()}/access/{obj_data.get('token')}?secret={user_secret}"
+                        'access_url': f"{get_base_url()}/access/{obj_token}?secret={obj_access_secret}"
                     }
 
                     secrets.append(secret_info)
@@ -955,12 +973,14 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         user_secret = generate_user_secret(body['ownerEmail'])
+        access_secret = generate_object_secret(token, body['ownerEmail'], object_data['createdAt'])
 
         # Prepare response with security info (shown only once)
         response_data = {
             'success': True,
             'object': {
                 'token': token,
+                'accessSecret': access_secret,
                 'name': body['name'],
                 'type': body['type'],
                 'securityType': security_type,
@@ -1039,11 +1059,15 @@ def get_object(query_params: Dict[str, Any]) -> Dict[str, Any]:
         if name and object_data['name'] != name:
             return cors_response(404, {'error': 'Object not found or invalid token'})
 
-        # Verify user secret (skip for "none" security type)
+        # Verify per-object access secret (skip for "none" security type)
         security_type = object_data.get('securityType', 'basic')
         if security_type != 'none':
-            expected_secret = generate_user_secret(object_data['ownerEmail'])
-            if secret != expected_secret:
+            expected_secret = generate_object_secret(
+                token,
+                object_data['ownerEmail'],
+                object_data.get('createdAt', 0)
+            )
+            if not hmac.compare_digest(secret, expected_secret):
                 return cors_response(403, {'error': 'Invalid secret for this object'})
 
         # Check expiration

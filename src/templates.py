@@ -1161,13 +1161,13 @@ def serve_create_page() -> str:
                         const isExpired = secret.ttl < Date.now();
 
                         const secretId = secret.token;
-                        const guiUrl = `${window.location.origin}/access/${secret.token}?secret=${userSecret}`;
-                        const curlCommand = `curl "${window.location.origin}/api/access/${secret.token}?secret=${userSecret}&raw=true"`;
+                        const guiUrl = `${window.location.origin}/access/${secret.token}?secret=${secret.access_secret}`;
+                        const curlCommand = `curl "${window.location.origin}/api/access/${secret.token}?secret=${secret.access_secret}&raw=true"`;
 
                         window._copyRegistry = window._copyRegistry || {};
                         const rId = `s_${secret.token}`;
                         window._copyRegistry[`${rId}_id`] = secretId;
-                        window._copyRegistry[`${rId}_secret`] = userSecret;
+                        window._copyRegistry[`${rId}_secret`] = secret.access_secret;
                         window._copyRegistry[`${rId}_gui`] = guiUrl;
                         window._copyRegistry[`${rId}_curl`] = curlCommand;
 
@@ -1188,9 +1188,9 @@ def serve_create_page() -> str:
                                         </div>
                                     </div>
                                     <div class="credential-row">
-                                        <strong>Your Token:</strong>
+                                        <strong>Access Secret:</strong>
                                         <div class="credential-box">
-                                            <code class="credential-value">${userSecret}</code>
+                                            <code class="credential-value">${secret.access_secret}</code>
                                             <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
                                         </div>
                                     </div>
@@ -1271,13 +1271,13 @@ def serve_create_page() -> str:
                         const isExpired = secret.ttl < Date.now();
 
                         const secretId = secret.token;
-                        const guiUrl = `${window.location.origin}/access/${secret.token}?secret=${userSecret}`;
-                        const curlCommand = `curl "${window.location.origin}/api/access/${secret.token}?secret=${userSecret}&raw=true"`;
+                        const guiUrl = `${window.location.origin}/access/${secret.token}?secret=${secret.access_secret}`;
+                        const curlCommand = `curl "${window.location.origin}/api/access/${secret.token}?secret=${secret.access_secret}&raw=true"`;
 
                         window._copyRegistry = window._copyRegistry || {};
                         const rId = `s_${secret.token}`;
                         window._copyRegistry[`${rId}_id`] = secretId;
-                        window._copyRegistry[`${rId}_secret`] = userSecret;
+                        window._copyRegistry[`${rId}_secret`] = secret.access_secret;
                         window._copyRegistry[`${rId}_gui`] = guiUrl;
                         window._copyRegistry[`${rId}_curl`] = curlCommand;
 
@@ -1298,9 +1298,9 @@ def serve_create_page() -> str:
                                         </div>
                                     </div>
                                     <div class="credential-row">
-                                        <strong>Your Token:</strong>
+                                        <strong>Access Secret:</strong>
                                         <div class="credential-box">
-                                            <code class="credential-value">${userSecret}</code>
+                                            <code class="credential-value">${secret.access_secret}</code>
                                             <button onclick="copyFromRegistry('${rId}_secret', this)" class="copy-btn-small">📋</button>
                                         </div>
                                     </div>
@@ -1489,8 +1489,8 @@ def serve_create_page() -> str:
 
                 const data = await response.json();
                 if (response.ok) {
-                    const accessUrl = `${window.location.origin}/access/${data.object.token}?secret=${userSecret}`;
-                    const curlCommand = `curl "${window.location.origin}/api/access/${data.object.token}?secret=${userSecret}&raw=true"`;
+                    const accessUrl = `${window.location.origin}/access/${data.object.token}?secret=${data.object.accessSecret}`;
+                    const curlCommand = `curl "${window.location.origin}/api/access/${data.object.token}?secret=${data.object.accessSecret}&raw=true"`;
 
                     // Store copy values in a registry to avoid quote escaping issues in inline handlers
                     window._copyRegistry = window._copyRegistry || {};
