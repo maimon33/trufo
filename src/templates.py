@@ -731,10 +731,10 @@ def serve_create_page() -> str:
 
             <div class="form-group">
                 <div class="checkbox-group">
-                    <input type="checkbox" id="oneTimeAccess">
+                    <input type="checkbox" id="oneTimeAccess" onchange="document.getElementById('oneTimeNote').style.display=this.checked?'block':'none'">
                     <label for="oneTimeAccess">🔥 One-time access (delete immediately after reading)</label>
                 </div>
-                <small style="color: #666; margin-top: 0.5rem; display: block;">
+                <small id="oneTimeNote" style="color: #666; margin-top: 0.5rem; display: none;">
                     💡 <strong>Note:</strong> If enabled, the secret will be deleted immediately after the first access, regardless of the TTL setting below.
                     However, if the TTL expires before anyone accesses it, the secret will still be automatically deleted.
                 </small>
@@ -2060,12 +2060,15 @@ def serve_manage_page() -> str:
         </p>
 
         <div class="auth-form">
-            <div class="form-group">
+            <div class="form-group" id="emailStep">
                 <label for="email">Email Address</label>
                 <input type="email" id="email" placeholder="your@email.com">
-                <label for="secret">User Secret</label>
-                <input type="password" id="secret" placeholder="Your user secret">
-                <button onclick="authenticateAndLoad()">Authenticate & Load Objects</button>
+                <button onclick="sendCode()">Send Code</button>
+            </div>
+            <div class="form-group" id="codeStep" style="display:none;">
+                <label for="verifyCode">Verification Code</label>
+                <input type="text" id="verifyCode" placeholder="123456" maxlength="6">
+                <button onclick="verifyAndLoad()">Verify & Load</button>
             </div>
         </div>
 
@@ -2074,36 +2077,62 @@ def serve_manage_page() -> str:
     </div>
 
     <script>
-        async function authenticateAndLoad() {
-            const email = document.getElementById('email').value;
-            const secret = document.getElementById('secret').value;
+        async function sendCode() {
+            const email = document.getElementById('email').value.trim();
+            if (!email) { showResult('Please enter your email', 'error'); return; }
+            try {
+                const res = await fetch('/api/validate-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                const data = await res.json();
+                if (data.error) {
+                    showResult(data.error, 'error');
+                } else {
+                    document.getElementById('emailStep').style.display = 'none';
+                    document.getElementById('codeStep').style.display = 'block';
+                    showResult('Verification code sent — check your email', 'success');
+                }
+            } catch { showResult('Network error', 'error'); }
+        }
 
-            if (!email || !secret) {
-                showResult('Please enter both email and secret', 'error');
-                return;
-            }
+        async function verifyAndLoad() {
+            const email = document.getElementById('email').value.trim();
+            const code = document.getElementById('verifyCode').value.trim();
+            if (!code) { showResult('Please enter the verification code', 'error'); return; }
+            try {
+                const res = await fetch('/api/verify-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, code })
+                });
+                const data = await res.json();
+                if (!data.verified) {
+                    showResult(data.error || 'Verification failed', 'error');
+                    return;
+                }
+                window.userCredentials = { email, secret: data.userSecret };
+                document.getElementById('codeStep').style.display = 'none';
+                await loadObjects(email, data.userSecret);
+            } catch { showResult('Network error', 'error'); }
+        }
 
+        async function loadObjects(email, secret) {
             try {
                 const response = await fetch('/api/list-objects', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, secret })
                 });
                 const data = await response.json();
-
                 if (response.ok) {
                     displayObjects(data.objects);
-                    showResult(`Found ${data.objects.length} objects`, 'success');
-                    // Store credentials for delete operations
-                    window.userCredentials = { email, secret };
+                    showResult(`Found ${data.objects.length} object(s)`, 'success');
                 } else {
-                    showResult(data.error || 'Authentication failed', 'error');
+                    showResult(data.error || 'Failed to load objects', 'error');
                 }
-            } catch (error) {
-                showResult('Network error', 'error');
-            }
+            } catch { showResult('Network error', 'error'); }
         }
 
         function displayObjects(objects) {
@@ -2139,7 +2168,7 @@ def serve_manage_page() -> str:
                             ${obj.totpSecret ? 'MFA enabled' : 'No MFA'}
                         </div>
                         <div class="object-actions">
-                            <button class="btn-small" onclick="copyAccessLink('${obj.token}')">Copy Access Link</button>
+                            <button class="btn-small" onclick="copyAccessLink('${obj.token}', '${obj.accessSecret}')">Copy Access Link</button>
                             <button class="btn-small btn-danger" onclick="deleteObject('${obj.id}', '${obj.s3Key}', '${obj.name}')">Delete</button>
                         </div>
                     </div>
@@ -2147,12 +2176,8 @@ def serve_manage_page() -> str:
             }).join('');
         }
 
-        function copyAccessLink(token) {
-            const email = document.getElementById('email').value;
-            // Generate user secret (same logic as backend)
-            const userSecret = CryptoJS.SHA256(email.toLowerCase()).toString();
-            const link = `${window.location.origin}/access/${token}?secret=${userSecret}`;
-
+        function copyAccessLink(token, accessSecret) {
+            const link = `${window.location.origin}/access/${token}?secret=${accessSecret}`;
             navigator.clipboard.writeText(link).then(() => {
                 showResult('Access link copied to clipboard!', 'success');
             });
@@ -2185,7 +2210,7 @@ def serve_manage_page() -> str:
 
                 if (response.ok) {
                     showResult(data.message || 'Object deleted successfully', 'success');
-                    authenticateAndLoad(); // Reload the list
+                    loadObjects(window.userCredentials.email, window.userCredentials.secret);
                 } else {
                     showResult(data.error || 'Delete failed', 'error');
                 }
@@ -2283,7 +2308,6 @@ def serve_manage_page() -> str:
             });
         }
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e1e5e9; text-align: center; font-size: 0.8rem; color: #999;">
         <a href="https://github.com/maimon33/trufo" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Source</a>
         <a href="https://github.com/maimon33/chrome-extensions/tree/main/trufo" target="_blank" rel="noopener noreferrer" style="color: #999; text-decoration: none; margin: 0 0.75rem;">Chrome Extension</a>

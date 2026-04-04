@@ -1462,16 +1462,25 @@ def list_user_objects(body: Dict[str, Any]) -> Dict[str, Any]:
 
                     # Only include non-expired objects
                     if obj_data.get('ttl', 0) > current_time:
+                        obj_token = obj_data.get('token')
+                        obj_created = obj_data.get('createdAt', 0)
+                        obj_access_secret = generate_object_secret(
+                            obj_token,
+                            normalized_email,
+                            obj_created
+                        )
                         objects.append({
                             'id': obj_data.get('id'),
                             'name': obj_data.get('name'),
                             'type': obj_data.get('type'),
                             'securityType': obj_data.get('securityType', 'none'),
-                            'createdAt': obj_data.get('createdAt'),
+                            'createdAt': obj_created,
                             'ttl': obj_data.get('ttl'),
                             'hitCount': obj_data.get('hitCount', 0),
                             'oneTimeAccess': obj_data.get('oneTimeAccess', False),
-                            's3Key': obj['Key']  # For deletion
+                            's3Key': obj['Key'],
+                            'token': obj_token,
+                            'accessSecret': obj_access_secret
                         })
                 except Exception as e:
                     print(f"Error reading object {obj['Key']}: {e}")
