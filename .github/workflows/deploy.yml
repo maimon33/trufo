@@ -39,7 +39,8 @@ jobs:
 
       - name: Build PWA
         run: |
-          cd pwa && npm ci && npm run build
+          npm --prefix pwa ci
+          npm --prefix pwa run build
           mkdir -p src/pwa_static
           cp -r pwa/dist/* src/pwa_static/
 
