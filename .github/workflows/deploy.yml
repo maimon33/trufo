@@ -66,7 +66,7 @@ jobs:
 
       - name: Build
         working-directory: sam
-        run: sam build --quiet
+        run: sam build
 
       - name: Deploy
         working-directory: sam
