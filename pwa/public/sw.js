@@ -1,4 +1,6 @@
-const CACHE = 'trufo-pwa-v1'
+// Cache name is stamped with the git hash at build time by vite.config.ts
+// Each deploy gets a new cache, forcing iOS/Android to fetch fresh files.
+const CACHE = 'trufo-pwa-' + (self.__BUILD_HASH__ || 'dev')
 const SHELL = ['/app/', '/app/index.html']
 
 self.addEventListener('install', e => {
@@ -7,6 +9,7 @@ self.addEventListener('install', e => {
 })
 
 self.addEventListener('activate', e => {
+  // Delete all old caches from previous versions
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
