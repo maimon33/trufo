@@ -1,0 +1,27 @@
+{
+  "name": "Trufo",
+  "short_name": "Trufo",
+  "description": "Secure secret sharing",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#667eea",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "/app/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"],
+  "shortcuts": [
+    {
+      "name": "New Secret",
+      "url": "/app/create",
+      "description": "Create a new secret"
+    }
+  ]
+}

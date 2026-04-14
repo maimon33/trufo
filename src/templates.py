@@ -647,6 +647,11 @@ def serve_create_page() -> str:
             <h1>🔒 Trufo - Create Secret</h1>
             <button type="button" class="header-btn" id="listSecretsBtn" onclick="showListSecrets()" style="display: none;">📋 My Secrets</button>
         </div>
+        <div style="text-align: center; margin-bottom: 0.75rem;">
+            <a href="/app" style="display: inline-flex; align-items: center; gap: 0.4rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.82rem; font-weight: 600;">
+                📱 Open Mobile App
+            </a>
+        </div>
 
         <div class="intro-section" id="welcomeMessage">
             <p><strong>Welcome to Trufo!</strong> Share secrets securely with automatic expiration and flexible security options.</p>

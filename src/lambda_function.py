@@ -6,11 +6,67 @@ import time
 import base64
 import hmac
 import secrets
+import mimetypes
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, unquote
 import os
 from typing import Dict, Any, Optional, Tuple, List
 from templates import serve_create_page, serve_access_page, serve_manage_page
+
+# PWA static files directory (populated at build time by CI)
+_PWA_DIR = os.path.join(os.path.dirname(__file__), 'pwa_static')
+
+_TEXT_TYPES = {
+    'application/javascript', 'application/json', 'image/svg+xml',
+    'text/html', 'text/css', 'text/plain',
+}
+
+def _serve_pwa(file_path: str) -> Dict[str, Any]:
+    """Serve a static file from pwa_static, with SPA fallback to index.html."""
+    # Strip leading slash
+    file_path = file_path.lstrip('/')
+
+    full = os.path.join(_PWA_DIR, file_path)
+
+    # Security: prevent path traversal
+    if not os.path.abspath(full).startswith(os.path.abspath(_PWA_DIR)):
+        return {'statusCode': 403, 'headers': {'Access-Control-Allow-Origin': '*'}, 'body': 'Forbidden'}
+
+    # SPA fallback: unknown paths serve index.html (client-side routing)
+    if not os.path.isfile(full):
+        full = os.path.join(_PWA_DIR, 'index.html')
+
+    content_type, _ = mimetypes.guess_type(full)
+    content_type = content_type or 'application/octet-stream'
+
+    # Long cache for hashed assets, no-cache for shell files
+    is_hashed_asset = '/assets/' in full
+    cache = 'public, max-age=31536000, immutable' if is_hashed_asset else 'no-cache'
+
+    with open(full, 'rb') as f:
+        raw = f.read()
+
+    if content_type in _TEXT_TYPES:
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': content_type,
+                'Cache-Control': cache,
+                'Access-Control-Allow-Origin': '*',
+            },
+            'body': raw.decode('utf-8'),
+        }
+    else:
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': content_type,
+                'Cache-Control': cache,
+                'Access-Control-Allow-Origin': '*',
+            },
+            'body': base64.b64encode(raw).decode(),
+            'isBase64Encoded': True,
+        }
 
 # AWS clients
 s3_client = boto3.client('s3')
@@ -200,6 +256,12 @@ def lambda_handler(event, context):
         # Route requests
         if method == 'OPTIONS':
             return cors_response(200, {'message': 'OK'})
+
+        # PWA routes — serve static bundle from pwa_static/
+        if path == '/app' or path == '/app/':
+            return _serve_pwa('index.html')
+        elif path.startswith('/app/'):
+            return _serve_pwa(path[5:])  # strip '/app/' prefix
 
         # Web interface routes
         if path == '/' or path == '/create':
@@ -824,7 +886,8 @@ def list_user_secrets(body: Dict[str, Any]) -> Dict[str, Any]:
                         'created': obj_created,
                         'one_time': obj_data.get('oneTimeAccess', False),
                         'access_count': obj_data.get('hitCount', 0),
-                        'access_url': f"{get_base_url()}/access/{obj_token}?secret={obj_access_secret}"
+                        'access_url': f"{get_base_url()}/access/{obj_token}?secret={obj_access_secret}",
+                        's3_key': obj['Key']
                     }
 
                     secrets.append(secret_info)

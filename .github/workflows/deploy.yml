@@ -6,6 +6,7 @@ on:
     paths:
       - "src/**"
       - "sam/**"
+      - "pwa/**"
   workflow_dispatch:
 
 env:
@@ -28,6 +29,19 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.9"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: pwa/package-lock.json
+
+      - name: Build PWA
+        run: |
+          cd pwa && npm ci && npm run build
+          mkdir -p src/pwa_static
+          cp -r pwa/dist/* src/pwa_static/
 
       - name: Set up AWS SAM CLI
         uses: aws-actions/setup-sam@v2
@@ -99,5 +113,6 @@ jobs:
           echo "| **API** | $API |" >> $GITHUB_STEP_SUMMARY
           echo "| **Create** | ${WEBSITE}create |" >> $GITHUB_STEP_SUMMARY
           echo "| **Manage** | ${WEBSITE}manage |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Mobile App (PWA)** | ${WEBSITE}app |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Commit: \`${{ github.sha }}\` by **${{ github.actor }}**" >> $GITHUB_STEP_SUMMARY

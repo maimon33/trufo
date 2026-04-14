@@ -48,10 +48,24 @@ def daily_report_handler(event, context):
             'costs': estimate_costs(infra, storage)
         }
 
+        # Skip report if all key metrics are zero (no activity)
+        m = report_data['metrics']
+        infra = report_data['infra']
+        all_zero = (
+            m.get('objects_created', 0) == 0 and
+            m.get('objects_accessed', 0) == 0 and
+            m.get('objects_deleted', 0) == 0 and
+            m.get('objects_toggled', 0) == 0 and
+            infra.get('lambda_invocations', 0) == 0 and
+            infra.get('api_requests', 0) == 0
+        )
+
         # Send report email
-        if ADMIN_EMAIL:
+        if ADMIN_EMAIL and not all_zero:
             send_daily_report(report_data)
             print(f"Daily report sent to {ADMIN_EMAIL}")
+        elif all_zero:
+            print("Skipping report: all metrics are zero")
 
         return {
             'statusCode': 200,
