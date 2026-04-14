@@ -10,7 +10,7 @@ export default function SignIn() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
 
-  const [mode, setMode] = useState<Mode>('magic')
+  const [mode, setMode] = useState<Mode>('otp')
   const [step, setStep] = useState<Step>('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
@@ -69,16 +69,16 @@ export default function SignIn() {
           <>
             <div className="method-tabs">
               <button
+                className={`method-tab${mode === 'otp' ? ' active' : ''}`}
+                onClick={() => setMode('otp')}
+              >
+                🔢 Email Code
+              </button>
+              <button
                 className={`method-tab${mode === 'magic' ? ' active' : ''}`}
                 onClick={() => setMode('magic')}
               >
                 ✨ Magic Link
-              </button>
-              <button
-                className={`method-tab${mode === 'otp' ? ' active' : ''}`}
-                onClick={() => setMode('otp')}
-              >
-                🔢 Code
               </button>
             </div>
 
