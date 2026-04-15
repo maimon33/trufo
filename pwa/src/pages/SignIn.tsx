@@ -25,7 +25,7 @@ export default function SignIn() {
 
     try {
       if (mode === 'magic') {
-        const returnUrl = `${window.location.origin}/app`
+        const returnUrl = `${window.location.origin}/app/`
         await api.sendMagicLink(email.trim().toLowerCase(), returnUrl)
         setStep('sent')
       } else {
@@ -115,8 +115,11 @@ export default function SignIn() {
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📬</div>
             <p style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Check your email</p>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
               Tap the magic link in your email to sign in. It expires in 10 minutes.
+            </p>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+              After tapping the link, you'll be brought right back to the app.
             </p>
             <button
               className="btn btn-secondary"

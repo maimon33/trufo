@@ -729,13 +729,13 @@ If you didn't request this, you can safely ignore this email.
         body_html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #667eea;">✨ Your Trufo Magic Link</h2>
-            <p>Click the button below to instantly access your Trufo account:</p>
+            <p>Tap the button below to instantly access your Trufo account. You'll be brought straight back into the app.</p>
             <div style="text-align: center; margin: 30px 0;">
-                <a href="{magic_url}"
+                <a href="{magic_url}" target="_self"
                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                           color: white; text-decoration: none; padding: 15px 30px;
                           border-radius: 8px; display: inline-block; font-weight: bold;">
-                    🚀 Access Trufo Instantly
+                    🚀 Open Trufo
                 </a>
             </div>
             <p><small>This link will expire in 10 minutes for security.</small></p>
