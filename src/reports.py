@@ -48,7 +48,9 @@ def daily_report_handler(event, context):
             'costs': estimate_costs(infra, storage)
         }
 
-        # Skip report if all key metrics are zero (no activity)
+        # Skip report if all key metrics are zero (no activity).
+        # Lambda invocations are excluded — they include the scheduler's own runs
+        # and internal routing calls, not real user activity.
         m = report_data['metrics']
         infra = report_data['infra']
         all_zero = (
@@ -56,7 +58,6 @@ def daily_report_handler(event, context):
             m.get('objects_accessed', 0) == 0 and
             m.get('objects_deleted', 0) == 0 and
             m.get('objects_toggled', 0) == 0 and
-            infra.get('lambda_invocations', 0) == 0 and
             infra.get('api_requests', 0) == 0
         )
 
