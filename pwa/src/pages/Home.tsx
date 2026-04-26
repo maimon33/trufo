@@ -23,35 +23,171 @@ function SecretCard({
   secret,
   onShare,
   onDelete,
+  onSaveEdit,
 }: {
   secret: Secret
   onShare: (s: Secret) => void
   onDelete: (s: Secret) => void
+  onSaveEdit: (s: Secret, content: string | boolean) => Promise<void>
 }) {
+  const { auth } = useAuth()
   const expiry = formatExpiry(secret.ttl)
+
+  const [editing, setEditing] = useState(false)
+  const [editContent, setEditContent] = useState<string | boolean>('')
+  const [loadingEdit, setLoadingEdit] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+
+  const [showTotp, setShowTotp] = useState(false)
+  const [totpCopied, setTotpCopied] = useState(false)
+
+  const handleEditClick = async () => {
+    if (editing) { setEditing(false); return }
+    if (!auth) return
+    setLoadingEdit(true)
+    try {
+      const res = await api.getObjectContent(auth.email, auth.secret, secret.s3_key)
+      setEditContent(res.content)
+      setEditing(true)
+    } catch {
+      alert('Failed to load content for editing')
+    } finally {
+      setLoadingEdit(false)
+    }
+  }
+
+  const handleSave = async () => {
+    setEditSaving(true)
+    try {
+      await onSaveEdit(secret, editContent)
+      setEditing(false)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const handleCopyTotp = async () => {
+    if (!secret.totp_secret) return
+    await navigator.clipboard.writeText(secret.totp_secret)
+    setTotpCopied(true)
+    setTimeout(() => setTotpCopied(false), 2000)
+  }
 
   return (
     <div className="card">
       <div className="secret-item">
         <div className="secret-meta">
-          <div className="secret-name">{secret.token.slice(0, 8)}…</div>
+          <div className="secret-name">{secret.name || secret.token.slice(0, 8) + '…'}</div>
           <div className="secret-preview">{secret.preview || '—'}</div>
           <div className="secret-footer">
             <TypeBadge type={secret.type} />
             {secret.one_time && <span className="badge badge-1time">1×</span>}
-            {secret.security === 'totp' && <span className="badge badge-totp">TOTP</span>}
+            {secret.security === 'totp' && (
+              <button
+                className="badge badge-totp"
+                style={{ border: 'none', cursor: 'pointer' }}
+                onClick={() => setShowTotp(v => !v)}
+                title="Show TOTP secret"
+              >
+                🔑 TOTP
+              </button>
+            )}
             <span className={expiry.cls}>{expiry.label}</span>
+            {secret.access_count > 0 && (
+              <span className="expiry">{secret.access_count}×</span>
+            )}
           </div>
         </div>
         <div className="secret-actions">
           <button className="btn btn-secondary btn-sm" onClick={() => onShare(secret)}>
             Share
           </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleEditClick}
+            disabled={loadingEdit}
+            title="Edit content"
+          >
+            {loadingEdit ? '…' : editing ? 'Close' : '✏️'}
+          </button>
           <button className="btn btn-danger btn-sm" onClick={() => onDelete(secret)}>
             Del
           </button>
         </div>
       </div>
+
+      {/* TOTP secret reveal */}
+      {showTotp && secret.totp_secret && (
+        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+          <div className="form-label" style={{ color: '#ea580c', marginBottom: '0.35rem' }}>TOTP Seed — add to authenticator</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="mono" style={{ flex: 1, fontSize: '0.8rem', wordBreak: 'break-all', color: 'var(--text)' }}>
+              {secret.totp_secret}
+            </span>
+            <button className="btn btn-secondary btn-sm" onClick={handleCopyTotp}>
+              {totpCopied ? '✓' : 'Copy'}
+            </button>
+          </div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+            Scan or paste into Google Authenticator, Authy, etc.
+          </div>
+        </div>
+      )}
+
+      {/* Inline edit form */}
+      {editing && (
+        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+          <div className="form-label" style={{ marginBottom: '0.5rem' }}>Edit content</div>
+          {secret.type === 'string' ? (
+            <textarea
+              className="input"
+              rows={4}
+              value={editContent as string}
+              onChange={e => setEditContent(e.target.value)}
+              autoFocus
+            />
+          ) : (
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <button
+                type="button"
+                className={`ttl-btn${editContent === true ? ' selected' : ''}`}
+                style={{ flex: 1 }}
+                onClick={() => setEditContent(true)}
+              >
+                True
+              </button>
+              <button
+                type="button"
+                className={`ttl-btn${editContent === false ? ' selected' : ''}`}
+                style={{ flex: 1 }}
+                onClick={() => setEditContent(false)}
+              >
+                False
+              </button>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <button
+              className="btn btn-primary btn-sm"
+              style={{ flex: 1 }}
+              onClick={handleSave}
+              disabled={editSaving || (secret.type === 'string' && !(editContent as string).trim())}
+            >
+              {editSaving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ flex: 1 }}
+              onClick={() => setEditing(false)}
+              disabled={editSaving}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -108,6 +244,16 @@ export default function Home() {
     }
   }
 
+  const handleSaveEdit = async (secret: Secret, content: string | boolean) => {
+    if (!auth) throw new Error('Not authenticated')
+    await api.updateObject(auth.email, auth.secret, secret.s3_key, content)
+    setSecrets(prev => prev.map(s =>
+      s.token === secret.token
+        ? { ...s, preview: String(content).slice(0, 100) }
+        : s
+    ))
+  }
+
   const headerAction = (
     <button
       className="btn btn-ghost btn-sm"
@@ -118,7 +264,7 @@ export default function Home() {
   )
 
   return (
-    <Layout title={`My Secrets`} action={headerAction}>
+    <Layout title="My Secrets" action={headerAction}>
       {loading && (
         <div className="loading">
           <div className="spinner" />
@@ -154,6 +300,7 @@ export default function Home() {
           secret={secret}
           onShare={handleShare}
           onDelete={deleting === secret.token ? () => {} : handleDelete}
+          onSaveEdit={handleSaveEdit}
         />
       ))}
 

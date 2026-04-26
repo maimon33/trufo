@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Layout from '../components/Layout'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
@@ -16,6 +17,7 @@ const TTL_OPTIONS = [
 
 export default function Create() {
   const { auth } = useAuth()
+  const navigate = useNavigate()
 
   const [name, setName] = useState('')
   const [type, setType] = useState<ObjectType>('string')
@@ -127,9 +129,14 @@ export default function Create() {
         <button className="btn btn-primary" onClick={handleShare}>
           {'share' in navigator ? '↗ Share' : copied ? '✓ Copied' : 'Copy Link'}
         </button>
-        <button className="btn btn-secondary" style={{ marginTop: '0.5rem' }} onClick={reset}>
-          Create Another
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => navigate('/')}>
+            ← My Secrets
+          </button>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={reset}>
+            Create Another
+          </button>
+        </div>
       </Layout>
     )
   }

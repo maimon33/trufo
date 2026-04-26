@@ -3,6 +3,7 @@ export type SecurityType = 'none' | 'basic' | 'totp'
 
 export interface Secret {
   token: string
+  name: string
   access_secret: string
   type: ObjectType
   security: SecurityType
@@ -13,6 +14,7 @@ export interface Secret {
   access_count: number
   access_url: string
   s3_key: string
+  totp_secret?: string | null
 }
 
 export interface CreateResult {

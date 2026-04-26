@@ -286,6 +286,10 @@ def lambda_handler(event, context):
             return list_user_objects(body)
         elif path == '/api/delete-object' and method == 'POST':
             return delete_user_object(body)
+        elif path == '/api/update-object' and method == 'POST':
+            return update_object(body)
+        elif path == '/api/get-object-content' and method == 'POST':
+            return get_object_content(body)
         elif path == '/api/user-objects' and method == 'GET':
             return get_user_objects(query_params)
         elif path == '/api/objects' and method == 'DELETE':
@@ -878,6 +882,7 @@ def list_user_secrets(body: Dict[str, Any]) -> Dict[str, Any]:
                     # Create secret info
                     secret_info = {
                         'token': obj_token,
+                        'name': obj_data.get('name', ''),
                         'access_secret': obj_access_secret,
                         'type': obj_data.get('type', 'string'),
                         'security': obj_data.get('securityType', 'none'),
@@ -887,7 +892,8 @@ def list_user_secrets(body: Dict[str, Any]) -> Dict[str, Any]:
                         'one_time': obj_data.get('oneTimeAccess', False),
                         'access_count': obj_data.get('hitCount', 0),
                         'access_url': f"{get_base_url()}/access/{obj_token}?secret={obj_access_secret}",
-                        's3_key': obj['Key']
+                        's3_key': obj['Key'],
+                        'totp_secret': obj_data.get('totpSecret') if obj_data.get('securityType') == 'totp' else None,
                     }
 
                     secrets.append(secret_info)
@@ -1624,3 +1630,77 @@ def delete_user_object(body: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error deleting object: {e}")
         return cors_response(500, {'error': 'Failed to delete object', 'details': str(e)})
+
+def get_object_content(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Return full decrypted content of an owned object for editing — STRICT AUTH REQUIRED"""
+    is_valid, error_msg, normalized_email = verify_user_auth(body)
+    if not is_valid:
+        return cors_response(401, {'error': error_msg})
+
+    s3_key = body.get('s3Key')
+    if not s3_key:
+        return cors_response(400, {'error': 'S3 key is required'})
+
+    user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
+    if not s3_key.startswith(f"users/{user_hash}/"):
+        return cors_response(403, {'error': 'Access denied'})
+
+    try:
+        obj_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
+        obj_data = json.loads(obj_response['Body'].read())
+
+        if obj_data.get('ownerEmail') != normalized_email:
+            return cors_response(403, {'error': 'Access denied'})
+
+        decrypted = decrypt_content(obj_data.get('content', ''))
+        return cors_response(200, {'content': decrypted})
+
+    except s3_client.exceptions.NoSuchKey:
+        return cors_response(404, {'error': 'Object not found'})
+    except Exception as e:
+        return cors_response(500, {'error': 'Failed to get content', 'details': str(e)})
+
+def update_object(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Update content of an owned object — STRICT AUTH REQUIRED"""
+    is_valid, error_msg, normalized_email = verify_user_auth(body)
+    if not is_valid:
+        return cors_response(401, {'error': error_msg})
+
+    s3_key = body.get('s3Key')
+    new_content = body.get('content')
+
+    if not s3_key or new_content is None:
+        return cors_response(400, {'error': 'S3 key and content are required'})
+
+    if len(str(new_content).encode('utf-8')) > 1024 * 1024:
+        return cors_response(400, {'error': 'Content too large. Maximum size is 1MB.'})
+
+    user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
+    if not s3_key.startswith(f"users/{user_hash}/"):
+        return cors_response(403, {'error': 'Access denied'})
+
+    try:
+        obj_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
+        obj_data = json.loads(obj_response['Body'].read())
+
+        if obj_data.get('ownerEmail') != normalized_email:
+            return cors_response(403, {'error': 'Access denied'})
+
+        if obj_data.get('ttl', 0) <= int(time.time() * 1000):
+            return cors_response(410, {'error': 'Object has expired'})
+
+        obj_data['content'] = encrypt_content(new_content)
+
+        s3_client.put_object(
+            Bucket=BUCKET_NAME,
+            Key=s3_key,
+            Body=json.dumps(obj_data),
+            ContentType='application/json'
+        )
+
+        return cors_response(200, {'success': True})
+
+    except s3_client.exceptions.NoSuchKey:
+        return cors_response(404, {'error': 'Object not found'})
+    except Exception as e:
+        return cors_response(500, {'error': 'Failed to update object', 'details': str(e)})

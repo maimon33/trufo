@@ -75,4 +75,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, secret, objectId, s3Key }),
     }),
+
+  getObjectContent: (email: string, secret: string, s3Key: string) =>
+    request<{ content: string | boolean }>('/api/get-object-content', {
+      method: 'POST',
+      body: JSON.stringify({ email, secret, s3Key }),
+    }),
+
+  updateObject: (email: string, secret: string, s3Key: string, content: string | boolean) =>
+    request<{ success: boolean }>('/api/update-object', {
+      method: 'POST',
+      body: JSON.stringify({ email, secret, s3Key, content }),
+    }),
 }
