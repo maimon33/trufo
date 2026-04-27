@@ -104,19 +104,21 @@ function SecretCard({
           <button className="btn btn-secondary btn-sm" onClick={() => onShare(secret)}>
             Share
           </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleEditClick}
-            disabled={loadingEdit}
-            title="Edit content"
-          >
-            {loadingEdit ? '…' : editing ? 'Close' : '✏️'}
-          </button>
           <button className="btn btn-danger btn-sm" onClick={() => onDelete(secret)}>
             Del
           </button>
         </div>
       </div>
+
+      {/* Edit button — full-width below the main row so it's always visible */}
+      <button
+        className="btn btn-secondary btn-sm"
+        style={{ marginTop: '0.6rem', width: '100%' }}
+        onClick={handleEditClick}
+        disabled={loadingEdit}
+      >
+        {loadingEdit ? 'Loading…' : editing ? '✕ Cancel edit' : '✏️ Edit content'}
+      </button>
 
       {/* TOTP secret reveal */}
       {showTotp && secret.totp_secret && (
@@ -168,24 +170,14 @@ function SecretCard({
               </button>
             </div>
           )}
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-            <button
-              className="btn btn-primary btn-sm"
-              style={{ flex: 1 }}
-              onClick={handleSave}
-              disabled={editSaving || (secret.type === 'string' && !(editContent as string).trim())}
-            >
-              {editSaving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              style={{ flex: 1 }}
-              onClick={() => setEditing(false)}
-              disabled={editSaving}
-            >
-              Cancel
-            </button>
-          </div>
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: '0.5rem', width: '100%' }}
+            onClick={handleSave}
+            disabled={editSaving || (secret.type === 'string' && !(editContent as string).trim())}
+          >
+            {editSaving ? 'Saving…' : 'Save changes'}
+          </button>
         </div>
       )}
     </div>
