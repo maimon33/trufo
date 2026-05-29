@@ -639,7 +639,7 @@ def send_email_validation(body: Dict[str, Any]) -> Dict[str, Any]:
 
     # Send email
     try:
-        send_email(email, 'Trufo Verification Code', f'Your verification code is: {code}')
+        send_email(email, 'Your Trufo sign-in code', f'Your verification code is: {code}')
 
         # Return response with cookie for verified users to reduce future MFA
         response = cors_response(200, {'message': 'Verification code sent'})
@@ -717,7 +717,7 @@ def send_magic_link(body: Dict[str, Any]) -> Dict[str, Any]:
 
     # Send email
     try:
-        subject = "✨ Your Trufo Magic Link"
+        subject = "Your Trufo sign-in link"
         body_text = f"""
 🔒 Trufo Magic Link Authentication
 
@@ -732,7 +732,7 @@ If you didn't request this, you can safely ignore this email.
 
         body_html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #667eea;">✨ Your Trufo Magic Link</h2>
+            <h2 style="color: #667eea;">Your Trufo sign-in link</h2>
             <p>Tap the button below to instantly access your Trufo account. You'll be brought straight back into the app.</p>
             <div style="text-align: center; margin: 30px 0;">
                 <a href="{magic_url}" target="_self"
@@ -748,7 +748,7 @@ If you didn't request this, you can safely ignore this email.
         """
 
         ses_client.send_email(
-            Source=FROM_EMAIL,
+            Source=f"Trufo <{FROM_EMAIL}>",
             Destination={'ToAddresses': [email]},
             Message={
                 'Subject': {'Data': subject, 'Charset': 'UTF-8'},
@@ -1400,7 +1400,7 @@ def send_email(to_email: str, subject: str, body: str):
 
         # Use configuration set if available for better deliverability
         email_params = {
-            'Source': f"Trufo Verification <{FROM_EMAIL}>",
+            'Source': f"Trufo <{FROM_EMAIL}>",
             'Destination': {'ToAddresses': [to_email]},
             'Message': {
                 'Subject': {
