@@ -32,12 +32,11 @@ function SecretCard({
   onSaveEdit: (s: Secret, content: string | boolean) => Promise<void>
   onRegenerateCodes: (s: Secret) => Promise<string[]>
 }) {
-  const { auth } = useAuth()
+  const navigate = useNavigate()
   const expiry = formatExpiry(secret.ttl)
 
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState<string | boolean>('')
-  const [loadingEdit, setLoadingEdit] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
 
   const [showTotp, setShowTotp] = useState(false)
@@ -46,18 +45,7 @@ function SecretCard({
   const [regeneratingCodes, setRegeneratingCodes] = useState(false)
 
   const handleEditClick = async () => {
-    if (editing) { setEditing(false); return }
-    if (!auth) return
-    setLoadingEdit(true)
-    try {
-      const res = await api.getObjectContent(auth.email, auth.session, secret.s3_key)
-      setEditContent(res.content)
-      setEditing(true)
-    } catch {
-      alert('Failed to load content for editing')
-    } finally {
-      setLoadingEdit(false)
-    }
+    navigate(`/secret/${secret.token}`)
   }
 
   const handleSave = async () => {
@@ -120,8 +108,8 @@ function SecretCard({
           <button className="btn btn-secondary btn-sm" onClick={() => onShare(secret)}>
             Share
           </button>
-          <button className="btn btn-secondary btn-sm" onClick={handleEditClick} disabled={loadingEdit}>
-            {loadingEdit ? '…' : 'Edit'}
+          <button className="btn btn-secondary btn-sm" onClick={handleEditClick}>
+            Edit
           </button>
           <button className="btn btn-danger btn-sm" onClick={() => onDelete(secret)}>
             Del

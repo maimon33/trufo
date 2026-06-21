@@ -6,6 +6,7 @@ import SignIn from './pages/SignIn'
 import Home from './pages/Home'
 import Create from './pages/Create'
 import Access from './pages/Access'
+import SecretDetail from './pages/SecretDetail'
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches
@@ -87,6 +88,7 @@ export default function App() {
             <Route path="/access/:token" element={<Access />} />
             <Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
             <Route path="/create" element={<RequireAuth><Create /></RequireAuth>} />
+            <Route path="/secret/:token" element={<RequireAuth><SecretDetail /></RequireAuth>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </MagicLinkHandler>
