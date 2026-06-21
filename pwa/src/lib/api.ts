@@ -88,4 +88,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, session, s3Key, content }),
     }),
+
+  regenerateRecoveryCodes: (email: string, session: string, s3Key: string) =>
+    request<{ success: boolean; recoveryCodes: string[] }>('/api/regenerate-recovery-codes', {
+      method: 'POST',
+      body: JSON.stringify({ email, session, s3Key }),
+    }),
 }

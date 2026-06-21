@@ -12,6 +12,12 @@ Your Trufo deployment now includes:
 
 ## 📋 Required DNS Records
 
+> **Deployment prerequisite:** set the `SES_EMAIL_DOMAIN` GitHub Actions
+> secret to the sending domain (`maimons.dev` for the live service). The deploy
+> workflow uses it to provision the SES domain identity and Easy DKIM. Without
+> it, SES can send from an individually verified address but messages lack
+> domain DKIM authentication and are much more likely to be classified as spam.
+
 After deployment, add these DNS records to your domain:
 
 ### 1. Domain Verification (Required)

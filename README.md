@@ -320,6 +320,7 @@ Lambda automatically receives these environment variables:
 
 - `S3_BUCKET_NAME`: S3 bucket for object storage
 - `FROM_EMAIL`: SES verified sender email
+- `SES_EMAIL_DOMAIN`: SES sending domain used for Easy DKIM (set via the deploy workflow)
 - `ENCRYPTION_KEY`: Auto-generated encryption key
 
 ## 🛠️ Development

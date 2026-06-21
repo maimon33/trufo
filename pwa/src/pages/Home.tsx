@@ -24,11 +24,13 @@ function SecretCard({
   onShare,
   onDelete,
   onSaveEdit,
+  onRegenerateCodes,
 }: {
   secret: Secret
   onShare: (s: Secret) => void
   onDelete: (s: Secret) => void
   onSaveEdit: (s: Secret, content: string | boolean) => Promise<void>
+  onRegenerateCodes: (s: Secret) => Promise<string[]>
 }) {
   const { auth } = useAuth()
   const expiry = formatExpiry(secret.ttl)
@@ -40,6 +42,8 @@ function SecretCard({
 
   const [showTotp, setShowTotp] = useState(false)
   const [totpCopied, setTotpCopied] = useState(false)
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
+  const [regeneratingCodes, setRegeneratingCodes] = useState(false)
 
   const handleEditClick = async () => {
     if (editing) { setEditing(false); return }
@@ -75,6 +79,18 @@ function SecretCard({
     setTimeout(() => setTotpCopied(false), 2000)
   }
 
+  const handleRegenerateCodes = async () => {
+    if (!confirm('Regenerate backup codes? Your existing codes will stop working immediately.')) return
+    setRegeneratingCodes(true)
+    try {
+      setRecoveryCodes(await onRegenerateCodes(secret))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not regenerate backup codes')
+    } finally {
+      setRegeneratingCodes(false)
+    }
+  }
+
   return (
     <div className="card">
       <div className="secret-item">
@@ -104,21 +120,20 @@ function SecretCard({
           <button className="btn btn-secondary btn-sm" onClick={() => onShare(secret)}>
             Share
           </button>
+          <button className="btn btn-secondary btn-sm" onClick={handleEditClick} disabled={loadingEdit}>
+            {loadingEdit ? '…' : 'Edit'}
+          </button>
           <button className="btn btn-danger btn-sm" onClick={() => onDelete(secret)}>
             Del
           </button>
         </div>
       </div>
 
-      {/* Edit button — full-width below the main row so it's always visible */}
-      <button
-        className="btn btn-secondary btn-sm"
-        style={{ marginTop: '0.6rem', width: '100%' }}
-        onClick={handleEditClick}
-        disabled={loadingEdit}
-      >
-        {loadingEdit ? 'Loading…' : editing ? '✕ Cancel edit' : '✏️ Edit content'}
-      </button>
+      {editing && (
+        <button className="btn btn-secondary btn-sm" style={{ marginTop: '0.6rem', width: '100%' }} onClick={() => setEditing(false)}>
+          ✕ Cancel edit
+        </button>
+      )}
 
       {/* TOTP secret reveal */}
       {showTotp && secret.totp_secret && (
@@ -135,6 +150,14 @@ function SecretCard({
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
             Scan or paste into Google Authenticator, Authy, etc.
           </div>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop: '0.65rem' }} onClick={handleRegenerateCodes} disabled={regeneratingCodes}>
+            {regeneratingCodes ? 'Regenerating…' : 'Regenerate backup codes'}
+          </button>
+          {recoveryCodes && (
+            <div className="alert alert-info" style={{ marginTop: '0.65rem', marginBottom: 0 }}>
+              <strong>Save these new codes now.</strong><br />{recoveryCodes.join('\n')}
+            </div>
+          )}
         </div>
       )}
 
@@ -246,6 +269,11 @@ export default function Home() {
     ))
   }
 
+  const handleRegenerateCodes = async (secret: Secret) => {
+    if (!auth) throw new Error('Not authenticated')
+    return (await api.regenerateRecoveryCodes(auth.email, auth.session, secret.s3_key)).recoveryCodes
+  }
+
   const headerAction = (
     <button
       className="btn btn-ghost btn-sm"
@@ -293,6 +321,7 @@ export default function Home() {
           onShare={handleShare}
           onDelete={deleting === secret.token ? () => {} : handleDelete}
           onSaveEdit={handleSaveEdit}
+          onRegenerateCodes={handleRegenerateCodes}
         />
       ))}
 

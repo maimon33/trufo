@@ -310,6 +310,8 @@ def lambda_handler(event, context):
             return delete_user_object(body)
         elif path == '/api/update-object' and method == 'POST':
             return update_object(body)
+        elif path == '/api/regenerate-recovery-codes' and method == 'POST':
+            return regenerate_recovery_codes(body)
         elif path == '/api/get-object-content' and method == 'POST':
             return get_object_content(body)
         elif path == '/api/user-objects' and method == 'GET':
@@ -1723,3 +1725,36 @@ def update_object(body: Dict[str, Any]) -> Dict[str, Any]:
         return cors_response(404, {'error': 'Object not found'})
     except Exception as e:
         return cors_response(500, {'error': 'Failed to update object', 'details': str(e)})
+
+def regenerate_recovery_codes(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Replace the recovery-code set for an owned TOTP secret."""
+    is_valid, error_msg, normalized_email = verify_user_auth(body)
+    if not is_valid:
+        return cors_response(401, {'error': error_msg})
+
+    s3_key = body.get('s3Key')
+    user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
+    if not s3_key:
+        return cors_response(400, {'error': 'S3 key is required'})
+    if not s3_key.startswith(f"users/{user_hash}/"):
+        return cors_response(403, {'error': 'Access denied'})
+
+    try:
+        obj_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=s3_key)
+        obj_data = json.loads(obj_response['Body'].read())
+        if obj_data.get('ownerEmail') != normalized_email:
+            return cors_response(403, {'error': 'Access denied'})
+        if obj_data.get('securityType') != 'totp':
+            return cors_response(400, {'error': 'This secret does not use TOTP'})
+        if obj_data.get('ttl', 0) <= int(time.time() * 1000):
+            return cors_response(410, {'error': 'Object has expired'})
+
+        codes = generate_recovery_codes()
+        obj_data['recoveryCodes'] = codes
+        s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_key,
+                             Body=json.dumps(obj_data), ContentType='application/json')
+        return cors_response(200, {'success': True, 'recoveryCodes': codes})
+    except s3_client.exceptions.NoSuchKey:
+        return cors_response(404, {'error': 'Object not found'})
+    except Exception as e:
+        return cors_response(500, {'error': 'Failed to regenerate recovery codes', 'details': str(e)})

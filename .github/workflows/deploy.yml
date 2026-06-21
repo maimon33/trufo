@@ -72,6 +72,9 @@ jobs:
         working-directory: sam
         run: |
           PARAMS="FromEmail=${{ secrets.FROM_EMAIL }} AdminEmail=${{ secrets.ADMIN_EMAIL }}"
+          if [ -n "${{ secrets.SES_EMAIL_DOMAIN }}" ]; then
+            PARAMS="$PARAMS SESEmailDomain=${{ secrets.SES_EMAIL_DOMAIN }}"
+          fi
           if [ -n "${{ secrets.DOMAIN_NAME }}" ]; then
             PARAMS="$PARAMS DomainName=${{ secrets.DOMAIN_NAME }} UseExternalDNS=true"
           fi
