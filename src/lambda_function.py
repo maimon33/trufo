@@ -76,9 +76,28 @@ cloudwatch_client = boto3.client('cloudwatch')
 BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'trufo-storage')
 FROM_EMAIL = os.environ.get('FROM_EMAIL', 'noreply@trufo.com')
 ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', 'default-key-change-in-production-32b')
+SESSION_SIGNING_KEY = os.environ.get('SESSION_SIGNING_KEY', '')
 
 # AWS SES client
 ses_client = boto3.client('ses')
+
+def _auth_record_key(kind: str, identifier: str) -> str:
+    return f'auth/{kind}/{identifier}.json'
+
+def put_auth_record(kind: str, identifier: str, data: Dict[str, Any]) -> None:
+    """Persist short-lived authentication challenges so cold starts are safe."""
+    s3_client.put_object(Bucket=BUCKET_NAME, Key=_auth_record_key(kind, identifier),
+                         Body=json.dumps(data), ContentType='application/json')
+
+def get_auth_record(kind: str, identifier: str) -> Optional[Dict[str, Any]]:
+    try:
+        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=_auth_record_key(kind, identifier))
+        return json.loads(response['Body'].read())
+    except s3_client.exceptions.NoSuchKey:
+        return None
+
+def delete_auth_record(kind: str, identifier: str) -> None:
+    s3_client.delete_object(Bucket=BUCKET_NAME, Key=_auth_record_key(kind, identifier))
 
 def get_anonymous_user_id(email: str) -> str:
     """Generate anonymous user ID from email for analytics"""
@@ -96,27 +115,30 @@ def calculate_size_category(content_size: int) -> str:
         return 'xlarge'
 
 def verify_user_auth(body: Dict[str, Any]) -> Tuple[bool, str, str]:
-    """Strict authentication verification for protected endpoints"""
+    """Verify a signed, short-lived owner session without a session database."""
     email = body.get('email')
-    provided_secret = body.get('secret')
+    session = body.get('session')
 
-    if not email or not provided_secret:
-        return False, "Email and secret are required", ""
+    if not email or not session:
+        return False, "Email and session are required", ""
 
     try:
-        # Normalize email for consistent verification
         normalized_email = normalize_email(email)
-        expected_secret = generate_user_secret(normalized_email)
-
-        # Constant-time comparison to prevent timing attacks
-        if not hmac.compare_digest(provided_secret, expected_secret):
-            return False, "Invalid authentication credentials", ""
+        payload_b64, signature = session.split('.', 1)
+        if not SESSION_SIGNING_KEY:
+            return False, "Authentication is not configured", ""
+        expected = hmac.new(SESSION_SIGNING_KEY.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return False, "Invalid authentication session", ""
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + '=' * (-len(payload_b64) % 4)))
+        if payload.get('email') != normalized_email or payload.get('exp', 0) < int(time.time()):
+            return False, "Authentication session expired", ""
 
         return True, "", normalized_email
 
     except ValueError as e:
         return False, str(e), ""
-    except Exception as e:
+    except Exception:
         return False, "Authentication failed", ""
 
 def track_metrics(event_type: str, **kwargs):
@@ -390,6 +412,15 @@ def generate_user_secret(email: str) -> str:
     normalized = normalize_email(email)
     return hashlib.sha256(normalized.encode()).hexdigest()
 
+def generate_owner_session(email: str) -> str:
+    """Create a 24-hour HMAC-signed owner session; no server state is retained."""
+    if not SESSION_SIGNING_KEY:
+        raise RuntimeError('SESSION_SIGNING_KEY is not configured')
+    payload = {'email': normalize_email(email), 'exp': int(time.time()) + 86400}
+    encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(',', ':')).encode()).decode().rstrip('=')
+    signature = hmac.new(SESSION_SIGNING_KEY.encode(), encoded.encode(), hashlib.sha256).hexdigest()
+    return f'{encoded}.{signature}'
+
 def generate_object_secret(token: str, owner_email: str, created_at: int) -> str:
     """Generate a per-object access secret using HMAC-SHA256.
     Inputs: token (random, per-object) + owner email + creation timestamp.
@@ -630,25 +661,18 @@ def send_email_validation(body: Dict[str, Any]) -> Dict[str, Any]:
     email_hash = hashlib.md5(normalized_email.encode()).hexdigest()
 
     # Store code with expiration (5 minutes) and track last sent time
-    email_codes[email_hash] = {
-        'email': email,
+    put_auth_record('otp', email_hash, {
+        'email': normalized_email,
         'code': code,
         'expires': time.time() + 300,
         'last_sent': time.time()
-    }
+    })
 
     # Send email
     try:
         send_email(email, 'Your Trufo sign-in code', f'Your verification code is: {code}')
 
-        # Return response with cookie for verified users to reduce future MFA
-        response = cors_response(200, {'message': 'Verification code sent'})
-        if has_active_secrets:
-            # Set a cookie for verified users to reduce MFA requests
-            cookie_value = generate_user_secret(email)[:16]  # Short hash for cookie
-            response['headers']['Set-Cookie'] = f'trufo_verified={cookie_value}; Max-Age=2592000; HttpOnly; SameSite=Strict'  # 30 days
-
-        return response
+        return cors_response(200, {'message': 'Verification code sent'})
     except Exception as e:
         return cors_response(500, {'error': 'Failed to send email', 'details': str(e)})
 
@@ -667,26 +691,24 @@ def verify_email_code(body: Dict[str, Any]) -> Dict[str, Any]:
         return cors_response(400, {'error': str(e)})
 
     email_hash = hashlib.md5(normalized_email.encode()).hexdigest()
-    stored_data = email_codes.get(email_hash)
+    stored_data = get_auth_record('otp', email_hash)
     if not stored_data:
         return cors_response(400, {'error': 'No code found for this email'})
 
     if time.time() > stored_data['expires']:
-        del email_codes[email_hash]
+        delete_auth_record('otp', email_hash)
         return cors_response(400, {'error': 'Code expired'})
 
     if stored_data['code'] != code:
         return cors_response(400, {'error': 'Invalid code'})
 
     # Code verified, remove from storage
-    del email_codes[email_hash]
-
-    # Generate user secret
-    user_secret = generate_user_secret(email)
+    delete_auth_record('otp', email_hash)
 
     return cors_response(200, {
         'verified': True,
-        'userSecret': user_secret
+        'email': normalized_email,
+        'session': generate_owner_session(normalized_email)
     })
 
 def send_magic_link(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -707,10 +729,10 @@ def send_magic_link(body: Dict[str, Any]) -> Dict[str, Any]:
     magic_token = secrets.token_urlsafe(32)
 
     # Store magic link token with expiration (10 minutes)
-    magic_links[magic_token] = {
+    put_auth_record('magic', magic_token, {
         'email': normalized_email,
         'expires': time.time() + 600  # 10 minutes
-    }
+    })
 
     # Generate magic link URL
     magic_url = f"{return_url}?auth={magic_token}"
@@ -773,26 +795,24 @@ def verify_magic_link(body: Dict[str, Any]) -> Dict[str, Any]:
         return cors_response(400, {'error': 'Token is required'})
 
     # Check if token exists and is valid
-    magic_data = magic_links.get(token)
+    magic_data = get_auth_record('magic', token)
     if not magic_data:
         return cors_response(400, {'error': 'Invalid or expired magic link'})
 
     # Check if token is expired
     if time.time() > magic_data['expires']:
-        del magic_links[token]
+        delete_auth_record('magic', token)
         return cors_response(400, {'error': 'Magic link has expired'})
 
     # Token is valid, authenticate user
     email = magic_data['email']
-    user_secret = generate_user_secret(email)
-
     # Clean up used token
-    del magic_links[token]
+    delete_auth_record('magic', token)
 
     return cors_response(200, {
         'success': True,
         'email': email,
-        'userSecret': user_secret
+        'session': generate_owner_session(email)
     })
 
 def check_user_auth(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -828,16 +848,9 @@ def check_user_auth(headers: Dict[str, Any], query_params: Dict[str, Any]) -> Di
 def list_user_secrets(body: Dict[str, Any]) -> Dict[str, Any]:
     """List all secrets for authenticated user"""
     try:
-        email = body.get('email', '').strip().lower()
-        user_secret = body.get('secret', '')
-
-        if not email or not user_secret:
-            return cors_response(400, {'error': 'Email and secret required'})
-
-        # Validate user secret
-        expected_secret = generate_user_secret(email)
-        if user_secret != expected_secret:
-            return cors_response(403, {'error': 'Invalid authentication'})
+        is_valid, error_msg, email = verify_user_auth(body)
+        if not is_valid:
+            return cors_response(401, {'error': error_msg})
 
         # Get user hash for searching (use MD5 to match storage structure)
         normalized_email = normalize_email(email)
@@ -956,6 +969,10 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
     """Create new object in S3"""
     print(f"DEBUG - create_object body: {json.dumps(body, indent=2)}")
 
+    is_valid, error_msg, normalized_email = verify_user_auth(body)
+    if not is_valid:
+        return cors_response(401, {'error': error_msg})
+
     # All security types require email authentication to CREATE
     # "None" just means no verification needed to ACCESS later
     required_fields = ['name', 'type', 'content', 'ttlHours', 'ownerEmail']
@@ -1010,7 +1027,7 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
         'content': encrypt_content(body['content']),
         'ttl': ttl,
         'token': token,
-        'ownerEmail': body['ownerEmail'],
+        'ownerEmail': normalized_email,
         'ownerName': body.get('ownerName', 'Anonymous'),
         'hitCount': 0,
         'createdAt': int(time.time() * 1000),
@@ -1024,7 +1041,10 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Use pathType (type-security combination) for S3 path organization
         path_type = body.get('pathType', body['type'])
-        s3_key = generate_s3_key(body['ownerEmail'], path_type, body['name'])
+        # Object names are display metadata, not storage paths: this avoids
+        # duplicate-name overwrites and path-like names creating odd prefixes.
+        user_hash = hashlib.md5(normalized_email.encode()).hexdigest()
+        s3_key = f"users/{user_hash}/{path_type}/{object_id}.json"
         s3_client.put_object(
             Bucket=BUCKET_NAME,
             Key=s3_key,
@@ -1041,8 +1061,7 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
             ContentType='application/json'
         )
 
-        user_secret = generate_user_secret(body['ownerEmail'])
-        access_secret = generate_object_secret(token, body['ownerEmail'], object_data['createdAt'])
+        access_secret = generate_object_secret(token, normalized_email, object_data['createdAt'])
 
         # Prepare response with security info (shown only once)
         response_data = {
@@ -1058,7 +1077,7 @@ def create_object(body: Dict[str, Any]) -> Dict[str, Any]:
                 'createdAt': object_data['createdAt'],
                 'ttl': ttl
             },
-            'userSecret': user_secret
+            'session': body['session']
         }
 
         # Include security data only on creation (show once)
@@ -1128,16 +1147,16 @@ def get_object(query_params: Dict[str, Any]) -> Dict[str, Any]:
         if name and object_data['name'] != name:
             return cors_response(404, {'error': 'Object not found or invalid token'})
 
-        # Verify per-object access secret (skip for "none" security type)
+        # Every shared link requires its per-object secret. "none" means no
+        # second factor, never that the URL token alone is sufficient.
         security_type = object_data.get('securityType', 'basic')
-        if security_type != 'none':
-            expected_secret = generate_object_secret(
-                token,
-                object_data['ownerEmail'],
-                object_data.get('createdAt', 0)
-            )
-            if not hmac.compare_digest(secret, expected_secret):
-                return cors_response(403, {'error': 'Invalid secret for this object'})
+        expected_secret = generate_object_secret(
+            token,
+            object_data['ownerEmail'],
+            object_data.get('createdAt', 0)
+        )
+        if not hmac.compare_digest(secret, expected_secret):
+            return cors_response(403, {'error': 'Invalid secret for this object'})
 
         # Check expiration
         if object_data['ttl'] <= int(time.time() * 1000):
@@ -1151,7 +1170,7 @@ def get_object(query_params: Dict[str, Any]) -> Dict[str, Any]:
             # No additional security for "none" type
             pass
 
-        elif security_type == 'notice':
+        elif security_type == 'basic':
             # Send notification email for notice-type objects
             try:
                 if object_data['ownerEmail'] != 'anonymous@trufo.local':

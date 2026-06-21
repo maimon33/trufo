@@ -96,7 +96,30 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt TrufoDataKey.Arn
+
+  TrufoDataKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Encrypts Trufo objects at rest in S3
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root' }
+            Action: 'kms:*'
+            Resource: '*'
+
+  TrufoSessionSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: HMAC key for stateless Trufo owner sessions
+      GenerateSecretString:
+        GenerateStringKey: sessionSigningKey
+        PasswordLength: 64
+        ExcludePunctuation: true
 
   # Lambda execution role
   TrufoLambdaRole:
@@ -125,6 +148,13 @@ Resources:
                 Resource:
                   - !Sub '${TrufoStorageBucket.Arn}/*'
                   - !GetAtt TrufoStorageBucket.Arn
+        - PolicyName: KMSDataKeyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Decrypt, kms:GenerateDataKey]
+                Resource: !GetAtt TrufoDataKey.Arn
         - PolicyName: SESAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -162,6 +192,7 @@ Resources:
           S3_BUCKET_NAME: !Ref TrufoStorageBucket
           FROM_EMAIL: !Ref FromEmail
           ENCRYPTION_KEY: !Sub '${AWS::StackName}-${AWS::AccountId}-key'
+          SESSION_SIGNING_KEY: !Sub '{{resolve:secretsmanager:${TrufoSessionSecret}:SecretString:sessionSigningKey}}'
           SES_CONFIGURATION_SET: !If [HasSESDomain, !Sub '${AWS::StackName}-trufo-config-set', '']
       Events:
         TrufoApiRoot:
@@ -184,6 +215,35 @@ Resources:
                 "path": "/api/cleanup",
                 "body": "{\"cleanup_key\": \"${AWS::StackName}-${AWS::AccountId}-keycleanup\"}"
               }
+
+  TrufoWebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub '${AWS::StackName}-ip-rate-limit'
+      Scope: REGIONAL
+      DefaultAction: { Allow: {} }
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub '${AWS::StackName}-waf'
+        SampledRequestsEnabled: true
+      Rules:
+        - Name: IPRequestRateLimit
+          Priority: 0
+          Action: { Block: {} }
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: IPRequestRateLimit
+            SampledRequestsEnabled: true
+
+  TrufoWebAclAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Sub 'arn:aws:apigateway:${AWS::Region}::/restapis/${ServerlessRestApi}/stages/Prod'
+      WebACLArn: !GetAtt TrufoWebAcl.Arn
 
   # SES Domain Identity
   SESDomainIdentity:

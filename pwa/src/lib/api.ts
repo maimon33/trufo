@@ -20,7 +20,7 @@ export const api = {
     }),
 
   verifyOTP: (email: string, code: string) =>
-    request<{ verified: boolean; userSecret: string }>('/api/verify-code', {
+    request<{ verified: boolean; email: string; session: string }>('/api/verify-code', {
       method: 'POST',
       body: JSON.stringify({ email, code }),
     }),
@@ -32,15 +32,15 @@ export const api = {
     }),
 
   verifyMagicLink: (token: string) =>
-    request<{ success: boolean; email: string; userSecret: string }>('/api/verify-magic-link', {
+    request<{ success: boolean; email: string; session: string }>('/api/verify-magic-link', {
       method: 'POST',
       body: JSON.stringify({ token }),
     }),
 
-  listSecrets: (email: string, secret: string) =>
+  listSecrets: (email: string, session: string) =>
     request<{ secrets: Secret[]; total: number }>('/api/list-secrets', {
       method: 'POST',
-      body: JSON.stringify({ email, secret }),
+      body: JSON.stringify({ email, session }),
     }),
 
   createObject: (data: {
@@ -50,13 +50,14 @@ export const api = {
     ttlHours: number
     ownerEmail: string
     ownerName: string
+    session: string
     securityType: string
     oneTimeAccess: boolean
   }) =>
     request<{
       success: boolean
       object: CreateResult
-      userSecret: string
+      session: string
       security?: { totpSecret: string; totpQR: string; recoveryCodes: string[] }
     }>('/api/objects', {
       method: 'POST',
@@ -70,21 +71,21 @@ export const api = {
     return request<AccessResult>(`/api/objects?${params}`)
   },
 
-  deleteObject: (email: string, secret: string, objectId: string, s3Key: string) =>
+  deleteObject: (email: string, session: string, objectId: string, s3Key: string) =>
     request<{ success: boolean }>('/api/delete-object', {
       method: 'POST',
-      body: JSON.stringify({ email, secret, objectId, s3Key }),
+      body: JSON.stringify({ email, session, objectId, s3Key }),
     }),
 
-  getObjectContent: (email: string, secret: string, s3Key: string) =>
+  getObjectContent: (email: string, session: string, s3Key: string) =>
     request<{ content: string | boolean }>('/api/get-object-content', {
       method: 'POST',
-      body: JSON.stringify({ email, secret, s3Key }),
+      body: JSON.stringify({ email, session, s3Key }),
     }),
 
-  updateObject: (email: string, secret: string, s3Key: string, content: string | boolean) =>
+  updateObject: (email: string, session: string, s3Key: string, content: string | boolean) =>
     request<{ success: boolean }>('/api/update-object', {
       method: 'POST',
-      body: JSON.stringify({ email, secret, s3Key, content }),
+      body: JSON.stringify({ email, session, s3Key, content }),
     }),
 }

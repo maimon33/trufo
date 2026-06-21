@@ -31,7 +31,7 @@ function MagicLinkHandler({ children }: { children: React.ReactNode }) {
 
     api.verifyMagicLink(authToken)
       .then(res => {
-        signIn({ email: res.email, secret: res.userSecret })
+        signIn({ email: res.email, session: res.session })
         if (isStandalone()) {
           // Already inside the PWA — navigate in-place
           navigate('/', { replace: true })

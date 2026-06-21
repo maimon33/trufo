@@ -2,7 +2,7 @@ const AUTH_KEY = 'trufo_auth'
 
 export interface AuthData {
   email: string
-  secret: string
+  session: string
 }
 
 export function getAuth(): AuthData | null {

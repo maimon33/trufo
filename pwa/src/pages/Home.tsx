@@ -46,7 +46,7 @@ function SecretCard({
     if (!auth) return
     setLoadingEdit(true)
     try {
-      const res = await api.getObjectContent(auth.email, auth.secret, secret.s3_key)
+      const res = await api.getObjectContent(auth.email, auth.session, secret.s3_key)
       setEditContent(res.content)
       setEditing(true)
     } catch {
@@ -197,7 +197,7 @@ export default function Home() {
     setLoading(true)
     setError('')
     try {
-      const res = await api.listSecrets(auth.email, auth.secret)
+      const res = await api.listSecrets(auth.email, auth.session)
       setSecrets(res.secrets)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load secrets')
@@ -227,7 +227,7 @@ export default function Home() {
     if (!confirm('Delete this secret?')) return
     setDeleting(secret.token)
     try {
-      await api.deleteObject(auth.email, auth.secret, secret.token, secret.s3_key)
+      await api.deleteObject(auth.email, auth.session, secret.token, secret.s3_key)
       setSecrets(prev => prev.filter(s => s.token !== secret.token))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Delete failed')
@@ -238,7 +238,7 @@ export default function Home() {
 
   const handleSaveEdit = async (secret: Secret, content: string | boolean) => {
     if (!auth) throw new Error('Not authenticated')
-    await api.updateObject(auth.email, auth.secret, secret.s3_key, content)
+    await api.updateObject(auth.email, auth.session, secret.s3_key, content)
     setSecrets(prev => prev.map(s =>
       s.token === secret.token
         ? { ...s, preview: String(content).slice(0, 100) }

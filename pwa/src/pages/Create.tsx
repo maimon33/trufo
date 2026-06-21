@@ -54,6 +54,7 @@ export default function Create() {
         ttlHours,
         ownerEmail: auth.email,
         ownerName: auth.email,
+        session: auth.session,
         securityType: security,
         oneTimeAccess: oneTime,
       })

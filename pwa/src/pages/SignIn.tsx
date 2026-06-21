@@ -48,7 +48,7 @@ export default function SignIn() {
     try {
       const res = await api.verifyOTP(email.trim().toLowerCase(), code)
       if (res.verified) {
-        signIn({ email: email.trim().toLowerCase(), secret: res.userSecret })
+        signIn({ email: res.email, session: res.session })
         navigate('/', { replace: true })
       }
     } catch (err) {
